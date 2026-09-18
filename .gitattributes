@@ -1,2 +1,20 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# 仓库在 Windows 上开发，但 packaging/build-app.sh 是要跑到 macOS / Linux 上的：
+# 带 CRLF 行尾的 shell 脚本一执行就报 "bad interpreter"。
+*.sh text eol=lf
+*.bash text eol=lf
+
+# 其余文件交给 git 自己判断，但统一按 LF 存进仓库，别让行尾随开发机漂移。
+* text=auto eol=lf
+
+# 二进制：明确标出来，免得 git 去做行尾转换或差异比较
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.bmp binary
+*.icns binary
+*.ico binary
+*.ttf binary
+*.ttc binary
+*.otf binary

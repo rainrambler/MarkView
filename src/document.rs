@@ -33,14 +33,20 @@ impl DocError {
     pub fn message(&self, s: &Strings) -> String {
         match self {
             Self::NoPath => s.error_no_path.to_owned(),
-            Self::Read { path, source } => fill(s.error_read, &[
-                ("path", &path.display().to_string()),
-                ("err", &source.to_string()),
-            ]),
-            Self::Write { path, source } => fill(s.error_write, &[
-                ("path", &path.display().to_string()),
-                ("err", &source.to_string()),
-            ]),
+            Self::Read { path, source } => fill(
+                s.error_read,
+                &[
+                    ("path", &path.display().to_string()),
+                    ("err", &source.to_string()),
+                ],
+            ),
+            Self::Write { path, source } => fill(
+                s.error_write,
+                &[
+                    ("path", &path.display().to_string()),
+                    ("err", &source.to_string()),
+                ],
+            ),
         }
     }
 }

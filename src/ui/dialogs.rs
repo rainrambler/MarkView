@@ -4,6 +4,7 @@ use egui::{Context, Modal, RichText, Ui};
 
 use crate::app::{Action, AfterDiscard, App, Dialog};
 use crate::i18n::{Strings, fill};
+use crate::shortcuts::fill_keys;
 
 pub fn show(app: &mut App, ctx: &Context, actions: &mut Vec<Action>) {
     match app.dialog.clone() {
@@ -57,7 +58,11 @@ fn about(app: &mut App, ctx: &Context) -> bool {
 
         if let Some(path) = app.font_path {
             ui.add_space(12.0);
-            ui.label(RichText::new(fill(s.font_note, &[("path", path)])).small().weak());
+            ui.label(
+                RichText::new(fill(s.font_note, &[("path", path)]))
+                    .small()
+                    .weak(),
+            );
         }
 
         ui.add_space(14.0);
@@ -74,13 +79,15 @@ fn shortcuts(app: &App, ctx: &Context) -> bool {
         ui.set_max_width(430.0);
         ui.heading(s.shortcuts_title);
         ui.add_space(10.0);
-        for (key, description) in s.shortcuts {
+        for (keys, description) in s.shortcuts {
             if description.is_empty() {
                 ui.add_space(6.0);
-                ui.label(RichText::new(*key).strong());
+                ui.label(RichText::new(*keys).strong());
                 continue;
             }
-            row(ui, key, description);
+            // 占位符换成当前平台的标签：macOS 上是 ⌘，Windows / Linux 上是 Ctrl。
+            let keys = fill_keys(ui.ctx(), keys);
+            row(ui, &keys, description);
         }
     });
 
@@ -112,10 +119,7 @@ fn discard(app: &mut App, ctx: &Context, then: &AfterDiscard) -> Choice {
         ui.set_max_width(430.0);
         ui.heading(s.discard_title);
         ui.add_space(8.0);
-        ui.label(fill(
-            s.discard_body,
-            &[("name", &app.doc.display_name(s))],
-        ));
+        ui.label(fill(s.discard_body, &[("name", &app.doc.display_name(s))]));
         ui.add_space(4.0);
         ui.label(RichText::new(describe(then, s)).small().weak());
         ui.add_space(16.0);

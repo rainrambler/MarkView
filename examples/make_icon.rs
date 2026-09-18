@@ -13,10 +13,11 @@
 //! 不是把大图缩下去 —— 分栏那套六个元素在 16px 下必然糊成一团，
 //! 这也是 macOS 应用普遍提供简化小图的原因。
 
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use image::{Rgba, RgbaImage};
+use image::{ImageFormat, Rgba, RgbaImage};
 
 // ---------------------------------------------------------------- 几何
 
@@ -360,7 +361,10 @@ fn main() {
     let verify_dir = parse_verify_dir();
 
     // 每个尺寸渲染一次；iconset 里同一个尺寸可能对应两个文件名
-    let sizes = [16u32, 32, 64, 128, 256, 512, 1024];
+    //
+    // 48 是给 Windows 用的：资源管理器的"大图标"视图就是取 48px，
+    // macOS 的 iconset 没有这一档，所以它不在下面的 entries 里。
+    let sizes = [16u32, 32, 48, 64, 128, 256, 512, 1024];
     let mut rendered: Vec<(u32, RgbaImage)> = Vec::new();
     for size in sizes {
         let image = render(size, detail_for(size));
@@ -456,6 +460,16 @@ fn main() {
 
     describe(&master);
 
+    // Windows 那边资源管理器显示的是 exe 里嵌的图标资源，那份资源就是这个 .ico
+    // （由 build.rs + assets/markview.rc 交给链接器）。写完之后回读一遍核对结构 ——
+    // 只写不读的话，偏移量写错要等到"资源管理器里还是个通用图标"才发现，
+    // 而那时候根本分不清是 ico 坏了还是构建脚本没生效。
+    let ico = assets.join("AppIcon.ico");
+    write_ico(&ico, &rendered);
+    let ico_problems = verify_ico(&ico);
+    if ico_problems > 0 {
+        eprintln!("AppIcon.ico 结构有问题，Windows 资源管理器会退回通用图标");
+    }
     // 判断"小尺寸还成不成立"，靠肉眼看放大图不可靠（我在这上面判断错过两次），
     // 靠按亮度阈值量包围盒也不可靠（细元素被抗锯齿摊薄后会整条漏掉）。
     // 真正可核对的是这两个精确量：最细元素有几像素厚，以及内容的上下留白差多少。
@@ -790,4 +804,212 @@ fn describe(path: &Path) {
         ),
         Err(err) => eprintln!("回读母版失败：{err}"),
     }
+}
+
+// ---------------------------------------------------------------- ICO（Windows 可执行文件图标）
+
+/// `.ico` 里装哪几档尺寸。
+///
+/// 就是资源管理器实际会去取的那几档：16（详细信息/列表）、32（小图标）、
+/// 48（大图标）、256（"超大图标"），再加上 64 / 128 应付中图标与高 DPI 的缩放，
+/// 免得 Windows 从 32 直接拉到 128。
+const ICO_SIZES: [u32; 6] = [16, 32, 48, 64, 128, 256];
+
+/// 小于等于这个尺寸的帧写成 BMP(DIB)，更大的写成 PNG。
+///
+/// 这不是随手切的。ICO 从 Vista 起允许任意尺寸的帧用 PNG 压缩，但资源管理器的
+/// **小图标路径**（16/32/48）历史上一直按 DIB 读，只有 256 那档才默认是 PNG；
+/// 给这三档老老实实写 DIB，就不必赌 shell 的实现细节。128/256 用 PNG 纯粹是
+/// 为了别把 exe 撑胖 —— 256×256 的 DIB 一帧就是 256KB，PNG 只要几十 KB。
+const ICO_DIB_MAX: u32 = 48;
+
+/// 把一帧编码成 ICO 里的 BMP(DIB) 形式。
+///
+/// 这就是一个 BITMAPINFOHEADER + 自下而上的 BGRA 像素 + 1 位 AND 掩码，
+/// 中间没有 BMP 文件头（`BM` + 文件大小那 14 个字节）。
+fn ico_dib(image: &RgbaImage) -> Vec<u8> {
+    let (width, height) = image.dimensions();
+    let mut out = Vec::with_capacity((40 + width * height * 4) as usize);
+
+    // ---- BITMAPINFOHEADER（40 字节）----
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    // 高度要写**两倍**：老格式把紧随其后的 AND 掩码当成"下半张图"，
+    // 写一倍的话 Windows 会以为图被截了一半。
+    out.extend_from_slice(&((height * 2) as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // 色平面
+    out.extend_from_slice(&32u16.to_le_bytes()); // 位深
+    out.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB，不压缩
+    out.extend_from_slice(&(width * height * 4).to_le_bytes()); // 像素数据字节数
+    out.extend_from_slice(&0i32.to_le_bytes()); // 横向分辨率（DPI 由系统决定）
+    out.extend_from_slice(&0i32.to_le_bytes()); // 纵向分辨率
+    out.extend_from_slice(&0u32.to_le_bytes()); // 调色板颜色数（真彩色写 0）
+    out.extend_from_slice(&0u32.to_le_bytes()); // 重要颜色数（0 = 全部）
+
+    // ---- 像素：BGRA，自下而上 ----
+    for y in (0..height).rev() {
+        for x in 0..width {
+            let pixel = image.get_pixel(x, y).0;
+            out.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+        }
+    }
+
+    // ---- AND 掩码：每行按 4 字节对齐，位为 1 表示透明 ----
+    //
+    // 32bpp 的帧 Windows 只看 alpha 通道，这张掩码是给不理解 alpha 的老代码路径
+    // （以及某些第三方提取图标的工具）兜底的，所以按 alpha 如实填，而不是图省事全 0。
+    let mask_row = (width as usize).div_ceil(32) * 4;
+    for y in (0..height).rev() {
+        let mut row = vec![0u8; mask_row];
+        for x in 0..width {
+            if image.get_pixel(x, y).0[3] < 128 {
+                row[(x / 8) as usize] |= 0x80 >> (x % 8);
+            }
+        }
+        out.extend_from_slice(&row);
+    }
+
+    out
+}
+
+/// 写一个多尺寸 `.ico`，并把每一帧写成了什么打到终端上。
+fn write_ico(path: &Path, rendered: &[(u32, RgbaImage)]) {
+    let mut frames: Vec<(u32, &'static str, Vec<u8>)> = Vec::new();
+
+    for size in ICO_SIZES {
+        let image = &rendered
+            .iter()
+            .find(|(s, _)| *s == size)
+            .unwrap_or_else(|| panic!("没有渲染过 {size}px，ICO 里却要用它"))
+            .1;
+
+        if size <= ICO_DIB_MAX {
+            frames.push((size, "BMP", ico_dib(image)));
+        } else {
+            let mut data = Vec::new();
+            image
+                .write_to(&mut Cursor::new(&mut data), ImageFormat::Png)
+                .expect("编码 PNG 帧失败");
+            frames.push((size, "PNG", data));
+        }
+    }
+
+    // ICONDIR：保留字段 0、类型 1（ICO 而不是 CUR）、帧数
+    let mut out = Vec::new();
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&(frames.len() as u16).to_le_bytes());
+
+    // 目录项各 16 字节，数据紧跟在目录之后 —— 偏移量要先把目录本身的长度算进去
+    let mut offset = 6 + 16 * frames.len() as u32;
+    for (size, _format, data) in &frames {
+        // 256 在这一格放不下（一个字节最大 255），按规范写 0 表示 256
+        let dim = if *size >= 256 { 0u8 } else { *size as u8 };
+        out.push(dim); // 宽
+        out.push(dim); // 高
+        out.push(0); // 调色板颜色数（真彩色写 0）
+        out.push(0); // 保留，必须是 0
+        out.extend_from_slice(&1u16.to_le_bytes()); // 色平面
+        out.extend_from_slice(&32u16.to_le_bytes()); // 位深
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&offset.to_le_bytes());
+        offset += data.len() as u32;
+    }
+    for (_, _, data) in &frames {
+        out.extend_from_slice(data);
+    }
+
+    std::fs::write(path, &out).unwrap_or_else(|e| panic!("写 {} 失败：{e}", path.display()));
+
+    println!(
+        "\n已写入 {}：{} 帧，共 {} 字节\n  尺寸  编码  字节数",
+        path.display(),
+        frames.len(),
+        out.len()
+    );
+    for (size, format, data) in &frames {
+        println!("  {size:>3}px  {format:>3}  {:>7}", data.len());
+    }
+}
+
+/// 回读刚写出来的 `.ico`，逐帧核对目录项、偏移量与帧头。
+///
+/// 这个文件是给 Windows 自己读的，写错了不会有任何报错 —— 只会安静地显示成
+/// 通用图标。所以在这里把它当成一份**外部格式**来验：偏移量落在文件里、
+/// 数据段之间不重叠、PNG 帧有签名、DIB 帧的宽高和目录项对得上。
+fn verify_ico(path: &Path) -> usize {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("读不回 {}：{e}", path.display()));
+    let u16_at = |at: usize| u16::from_le_bytes([bytes[at], bytes[at + 1]]);
+    let u32_at =
+        |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+
+    if bytes.len() < 6 || u16_at(0) != 0 || u16_at(2) != 1 {
+        println!("  ✗ AppIcon.ico 的 ICONDIR 头不对（应为首 4 字节 00 00 01 00）");
+        return 1;
+    }
+
+    let count = u16_at(4) as usize;
+    let directory_end = 6 + 16 * count;
+    if directory_end > bytes.len() {
+        println!("  ✗ AppIcon.ico 声称有 {count} 帧，目录却放不下（文件被截断？）");
+        return 1;
+    }
+
+    let mut problems = 0usize;
+    let mut sizes = Vec::new();
+
+    for index in 0..count {
+        let entry = 6 + index * 16;
+        let dim = |v: u8| if v == 0 { 256 } else { u32::from(v) };
+        let width = dim(bytes[entry]);
+        let height = dim(bytes[entry + 1]);
+        let length = u32_at(entry + 8) as usize;
+        let offset = u32_at(entry + 12) as usize;
+        sizes.push(width);
+
+        if width != height {
+            println!("  ✗ 第 {index} 帧：{width}×{height} 不是正方形");
+            problems += 1;
+            continue;
+        }
+        if offset < directory_end || offset + length > bytes.len() {
+            println!(
+                "  ✗ {width}px：数据段 {offset}..{} 越界或与目录重叠",
+                offset + length
+            );
+            problems += 1;
+            continue;
+        }
+
+        let frame = &bytes[offset..offset + length];
+        // PNG 帧靠 8 字节签名认；DIB 帧头 4 字节是 biSize=40，紧接着是宽、高
+        let ok = if frame.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+            true
+        } else {
+            let header = |at: usize| {
+                u32::from_le_bytes([frame[at], frame[at + 1], frame[at + 2], frame[at + 3]])
+            };
+            frame.len() >= 40 && header(0) == 40 && header(4) == width && header(8) == height * 2
+        };
+        if !ok {
+            println!("  ✗ {width}px：帧头不是合法的 PNG / DIB");
+            problems += 1;
+        }
+    }
+
+    println!(
+        "\n回读 {}：{count} 帧（{}），结构检查{}",
+        path.display(),
+        sizes
+            .iter()
+            .map(|s| format!("{s}px"))
+            .collect::<Vec<_>>()
+            .join(" / "),
+        if problems == 0 {
+            "全部通过".to_string()
+        } else {
+            format!("发现 {problems} 处问题")
+        }
+    );
+    problems
 }

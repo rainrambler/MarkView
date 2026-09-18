@@ -1,13 +1,18 @@
 //! 顶部菜单栏。所有条目都只是往 `actions` 里塞意图，真正的执行在 `app` 层。
 
 use egui::containers::menu::MenuButton;
-use egui::{MenuBar, Ui};
+use egui::{KeyboardShortcut, MenuBar, Ui};
 
 use crate::app::{Action, App};
 use crate::i18n::{Language, fill};
 use crate::prefs::ViewMode;
+use crate::shortcuts::{self, keys};
 
 pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
+    // 标签按平台习惯生成：macOS 是 ⌘S，Windows / Linux 是 Ctrl+S。
+    let ctx = ui.ctx().clone();
+    let key = |shortcut: KeyboardShortcut| shortcuts::label(&ctx, shortcut);
+
     // 只借用这几个字段。若在这里留着 `app` 再用，借用检查器会认为重借用冲突。
     let App { prefs, doc, .. } = app;
     let s = prefs.language.strings();
@@ -16,21 +21,21 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
         MenuBar::new().ui(ui, |ui| {
             // ---------------------------------------------------------- 文件
             MenuButton::new(s.menu_file).ui(ui, |ui| {
-                if item(ui, s.item_new, "⌘N") {
+                if item(ui, s.item_new, &key(keys::NEW)) {
                     actions.push(Action::New);
                 }
-                if item(ui, s.item_open, "⌘O") {
+                if item(ui, s.item_open, &key(keys::OPEN)) {
                     actions.push(Action::Open);
                 }
                 ui.separator();
-                if item(ui, s.item_save, "⌘S") {
+                if item(ui, s.item_save, &key(keys::SAVE)) {
                     actions.push(Action::Save);
                 }
-                if item(ui, s.item_save_as, "⌘⇧S") {
+                if item(ui, s.item_save_as, &key(keys::SAVE_AS)) {
                     actions.push(Action::SaveAs);
                 }
                 ui.separator();
-                if item(ui, s.item_export_html, "⌘E") {
+                if item(ui, s.item_export_html, &key(keys::EXPORT_HTML)) {
                     actions.push(Action::ExportHtml);
                 }
                 ui.separator();
@@ -60,53 +65,53 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                 });
 
                 ui.separator();
-                if item(ui, s.item_quit, "⌘Q") {
+                if item(ui, s.item_quit, &key(keys::QUIT)) {
                     actions.push(Action::Quit);
                 }
             });
 
             // ---------------------------------------------------------- 编辑
             MenuButton::new(s.menu_edit).ui(ui, |ui| {
-                if item(ui, s.item_bold, "⌘B") {
+                if item(ui, s.item_bold, &key(keys::BOLD)) {
                     actions.push(Action::WrapSelection("**", "**"));
                 }
-                if item(ui, s.item_italic, "⌘I") {
+                if item(ui, s.item_italic, &key(keys::ITALIC)) {
                     actions.push(Action::WrapSelection("*", "*"));
                 }
-                if item(ui, s.item_strikethrough, "⌘⇧X") {
+                if item(ui, s.item_strikethrough, &key(keys::STRIKETHROUGH)) {
                     actions.push(Action::WrapSelection("~~", "~~"));
                 }
-                if item(ui, s.item_inline_code, "⌘⇧C") {
+                if item(ui, s.item_inline_code, &key(keys::INLINE_CODE)) {
                     actions.push(Action::WrapSelection("`", "`"));
                 }
-                if item(ui, s.item_link, "⌘K") {
+                if item(ui, s.item_link, &key(keys::LINK)) {
                     actions.push(Action::WrapSelection("[", "](url)"));
                 }
                 ui.separator();
-                if item(ui, s.item_bullet_list, "⌘⇧U") {
+                if item(ui, s.item_bullet_list, &key(keys::BULLET_LIST)) {
                     actions.push(Action::ToggleLinePrefix("- "));
                 }
-                if item(ui, s.item_blockquote, "⌘⇧P") {
+                if item(ui, s.item_blockquote, &key(keys::BLOCKQUOTE)) {
                     actions.push(Action::ToggleLinePrefix("> "));
                 }
                 ui.separator();
-                if item(ui, s.item_heading1, "⌘⌥1") {
+                if item(ui, s.item_heading1, &key(keys::HEADING1)) {
                     actions.push(Action::SetHeading(1));
                 }
-                if item(ui, s.item_heading2, "⌘⌥2") {
+                if item(ui, s.item_heading2, &key(keys::HEADING2)) {
                     actions.push(Action::SetHeading(2));
                 }
-                if item(ui, s.item_heading3, "⌘⌥3") {
+                if item(ui, s.item_heading3, &key(keys::HEADING3)) {
                     actions.push(Action::SetHeading(3));
                 }
                 ui.separator();
-                if item(ui, s.item_find, "⌘F") {
+                if item(ui, s.item_find, &key(keys::FIND)) {
                     actions.push(Action::OpenFind);
                 }
-                if item(ui, s.item_next_match, "⌘G") {
+                if item(ui, s.item_next_match, &key(keys::FIND_NEXT)) {
                     actions.push(Action::FindStep(1));
                 }
-                if item(ui, s.item_prev_match, "⌘⇧G") {
+                if item(ui, s.item_prev_match, &key(keys::FIND_PREV)) {
                     actions.push(Action::FindStep(-1));
                 }
             });
@@ -114,15 +119,15 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
             // ---------------------------------------------------------- 视图
             MenuButton::new(s.menu_view).ui(ui, |ui| {
                 for (mode, shortcut) in [
-                    (ViewMode::Editor, "⌘1"),
-                    (ViewMode::Split, "⌘2"),
-                    (ViewMode::Preview, "⌘3"),
+                    (ViewMode::Editor, keys::VIEW_EDITOR),
+                    (ViewMode::Split, keys::VIEW_SPLIT),
+                    (ViewMode::Preview, keys::VIEW_PREVIEW),
                 ] {
                     let checked = prefs.view_mode == mode;
                     if ui
                         .add(
                             egui::Button::new(mode.label(s))
-                                .shortcut_text(shortcut)
+                                .shortcut_text(key(shortcut))
                                 .selected(checked),
                         )
                         .clicked()
@@ -135,7 +140,7 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                 if ui
                     .add(
                         egui::Button::new(s.item_outline)
-                            .shortcut_text("⌘⇧O")
+                            .shortcut_text(key(keys::TOGGLE_OUTLINE))
                             .selected(prefs.show_outline),
                     )
                     .clicked()
@@ -145,7 +150,7 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                 if ui
                     .add(
                         egui::Button::new(s.item_line_numbers)
-                            .shortcut_text("⌘⇧L")
+                            .shortcut_text(key(keys::TOGGLE_LINE_NUMBERS))
                             .selected(prefs.show_line_numbers),
                     )
                     .clicked()
@@ -168,23 +173,26 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                 if ui
                     .add(
                         egui::Button::new(s.item_theme)
-                            .shortcut_text("⌘⇧T")
+                            .shortcut_text(key(keys::CYCLE_THEME))
                             .selected(false),
                     )
-                    .on_hover_text(fill(s.item_theme_current, &[("theme", prefs.theme.label(s))]))
+                    .on_hover_text(fill(
+                        s.item_theme_current,
+                        &[("theme", prefs.theme.label(s))],
+                    ))
                     .clicked()
                 {
                     actions.push(Action::CycleTheme);
                 }
                 ui.separator();
 
-                if item(ui, s.item_zoom_in, "⌘+") {
+                if item(ui, s.item_zoom_in, &key(keys::ZOOM_IN)) {
                     actions.push(Action::ZoomIn);
                 }
-                if item(ui, s.item_zoom_out, "⌘-") {
+                if item(ui, s.item_zoom_out, &key(keys::ZOOM_OUT)) {
                     actions.push(Action::ZoomOut);
                 }
-                if item(ui, s.item_zoom_reset, "⌘0") {
+                if item(ui, s.item_zoom_reset, &key(keys::ZOOM_RESET)) {
                     actions.push(Action::ZoomReset);
                 }
             });

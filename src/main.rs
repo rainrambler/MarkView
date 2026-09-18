@@ -13,6 +13,7 @@ mod i18n;
 mod markdown;
 mod mermaid;
 mod prefs;
+mod shortcuts;
 mod ui;
 
 use app::{APP_NAME, App};
@@ -35,11 +36,7 @@ fn main() -> Result<(), eframe::Error> {
     };
     pick_render_backend(&mut options);
 
-    eframe::run_native(
-        APP_NAME,
-        options,
-        Box::new(|cc| Ok(Box::new(App::new(cc)))),
-    )
+    eframe::run_native(APP_NAME, options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
 }
 
 /// 挑一个靠谱的渲染后端。

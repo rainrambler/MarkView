@@ -48,6 +48,11 @@ serde = { version = "1", features = ["derive"] }
 # 只用它来校验系统字体是否可解析（epaint 0.36 内部同样使用 skrifa）
 skrifa = "0.44"
 
+[build-dependencies]
+# 把 assets/AppIcon.ico 编成 Windows 图标资源交给链接器（见 build.rs）：
+# 资源管理器显示的是 PE 里的图标资源，不是窗口图标，运行时改不了。
+embed-resource = "3"
+
 [profile.release]
 opt-level = 3
 lto = "thin"

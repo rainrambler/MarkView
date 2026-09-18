@@ -104,9 +104,39 @@ macOS 忽略窗口级别的图标，Dock 和 Finder 只认 `.app` bundle 里 `CF
 packaging/build-app.sh          # -> dist/MarkView.app
 ```
 
+### Windows 可执行文件图标
+
+资源管理器读的是**可执行文件自己的资源**，所以图标必须在链接期就写进 exe ——
+`main.rs` 里的 `ViewportBuilder::with_icon` 只管标题栏和任务栏，没有任何运行时接口能改
+exe 文件本身的图标。这件事由 `build.rs` 完成：它把 `assets/markview.rc` 编成资源，
+而那份脚本指向 `assets/AppIcon.ico`。
+
+```powershell
+cargo build --release           # target/release/markview.exe 里已经带图标了
+```
+
+和其他图标一样，`.ico` 也是画出来的，不是手绘或从设计工具导出的：
+
+```bash
+cargo run --release --example make_icon    # 重写 assets/AppIcon.ico（macOS 上还有 .icns）
+```
+
+### Windows 发布包
+
+```powershell
+pwsh -File packaging/build-release.ps1      # -> dist/markview-<版本>-<target>.zip
+```
+
+脚本用 `--locked` 构建，发现 exe 里没有图标资源就拒绝打包，最后产出 zip 和一份
+`sha256sum -c` 认的 `SHA256SUMS.txt`。macOS 的产物走 `packaging/build-app.sh`。
+
 ## 代码结构
 
 ```
+build.rs          构建脚本：把 Windows 图标资源链进 exe（见上）
+examples/
+  make_icon.rs    用代码画出每个尺寸的图标，含多尺寸 .ico
+assets/           生成出来的图标：AppIcon.ico（Windows）/ AppIcon.icns（macOS）/ PNG 母版
 src/
   main.rs          入口：窗口选项、拖放支持、渲染后端选择
   app.rs           应用状态机：Action 队列、主循环、快捷键表

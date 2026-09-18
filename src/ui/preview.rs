@@ -88,7 +88,10 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                                     viewer().show_mut(ui, cache, &mut raw.to_owned());
                                     ui.colored_label(
                                         ui.visuals().warn_fg_color,
-                                        fill(strings.mermaid_prefix, &[("err", &err.message(strings))]),
+                                        fill(
+                                            strings.mermaid_prefix,
+                                            &[("err", &err.message(strings))],
+                                        ),
                                     );
                                 }
                                 block += 1;

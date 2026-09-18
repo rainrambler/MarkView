@@ -4,6 +4,7 @@ use egui::{Align, Layout, RichText, Ui};
 
 use crate::app::{Action, App};
 use crate::prefs::ViewMode;
+use crate::shortcuts;
 
 pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
     let App {
@@ -15,6 +16,14 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
         ..
     } = app;
     let s = prefs.language.strings();
+
+    // 悬停提示里的 {zoom_in} 之类换成当前平台的按键标签
+    let hint_zoom_in = shortcuts::fill_keys(ui.ctx(), s.hint_zoom_in);
+    let hint_zoom_out = shortcuts::fill_keys(ui.ctx(), s.hint_zoom_out);
+    let hint_view_editor = shortcuts::fill_keys(ui.ctx(), s.hint_view_editor);
+    let hint_view_split = shortcuts::fill_keys(ui.ctx(), s.hint_view_split);
+    let hint_view_preview = shortcuts::fill_keys(ui.ctx(), s.hint_view_preview);
+    let hint_cycle_theme = shortcuts::fill_keys(ui.ctx(), s.hint_cycle_theme);
 
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
@@ -69,10 +78,10 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                     ui.label(
                         RichText::new(format!("{}%", (prefs.zoom * 100.0).round() as i32)).small(),
                     );
-                    if ui.small_button("＋").on_hover_text(s.hint_zoom_in).clicked() {
+                    if ui.small_button("＋").on_hover_text(hint_zoom_in).clicked() {
                         actions.push(Action::ZoomIn);
                     }
-                    if ui.small_button("－").on_hover_text(s.hint_zoom_out).clicked() {
+                    if ui.small_button("－").on_hover_text(hint_zoom_out).clicked() {
                         actions.push(Action::ZoomOut);
                     }
 
@@ -81,9 +90,9 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                     for mode in ViewMode::ALL.iter().rev() {
                         let selected = *mode == prefs.view_mode;
                         let hint = match mode {
-                            ViewMode::Editor => s.hint_view_editor,
-                            ViewMode::Split => s.hint_view_split,
-                            ViewMode::Preview => s.hint_view_preview,
+                            ViewMode::Editor => &hint_view_editor,
+                            ViewMode::Split => &hint_view_split,
+                            ViewMode::Preview => &hint_view_preview,
                         };
                         if ui
                             .selectable_label(selected, RichText::new(mode.label(s)).small())
@@ -97,7 +106,7 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                     ui.separator();
                     if ui
                         .small_button(RichText::new(prefs.theme.label(s)).small())
-                        .on_hover_text(s.hint_cycle_theme)
+                        .on_hover_text(hint_cycle_theme)
                         .clicked()
                     {
                         actions.push(Action::CycleTheme);

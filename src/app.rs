@@ -17,6 +17,7 @@ use crate::i18n::{Language, fill};
 use crate::markdown::{self, Heading, Stats, byte_to_char};
 use crate::mermaid;
 use crate::prefs::{Preferences, ViewMode};
+use crate::shortcuts::keys;
 use crate::ui;
 use crate::ui::find::FindState;
 
@@ -434,10 +435,9 @@ impl App {
                 let shown = path.display().to_string();
                 self.set_toast_info(fill(s.toast_exported, &[("path", &shown)]));
             }
-            Err(err) => self.set_toast_error(fill(
-                s.toast_export_failed,
-                &[("err", &err.to_string())],
-            )),
+            Err(err) => {
+                self.set_toast_error(fill(s.toast_export_failed, &[("err", &err.to_string())]))
+            }
         }
     }
 
@@ -799,126 +799,61 @@ impl eframe::App for App {
     }
 }
 
-/// 快捷键表。用 `Command` 而不是 Ctrl，在 macOS 上就是 ⌘。
+/// 快捷键表：按键常量 → 要执行的动作。
+///
+/// 按键本身定义在 [`crate::shortcuts::keys`]，界面标签也从同一批常量生成，
+/// 所以 macOS 的 ⌘ 和 Windows 的 Ctrl 不会各写一份（也不会写歪）。
 static SHORTCUTS: &[(KeyboardShortcut, Action)] = &[
     // 文件
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::N),
-        Action::New,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::O),
-        Action::Open,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::S),
-        Action::Save,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S),
-        Action::SaveAs,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::E),
-        Action::ExportHtml,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Q),
-        Action::Quit,
-    ),
+    (keys::NEW, Action::New),
+    (keys::OPEN, Action::Open),
+    (keys::SAVE, Action::Save),
+    (keys::SAVE_AS, Action::SaveAs),
+    (keys::EXPORT_HTML, Action::ExportHtml),
+    (keys::QUIT, Action::Quit),
     // 视图
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Num1),
-        Action::SetView(ViewMode::Editor),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2),
-        Action::SetView(ViewMode::Split),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Num3),
-        Action::SetView(ViewMode::Preview),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::O),
-        Action::ToggleOutline,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::L),
-        Action::ToggleLineNumbers,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::T),
-        Action::CycleTheme,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Plus),
-        Action::ZoomIn,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Equals),
-        Action::ZoomIn,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus),
-        Action::ZoomOut,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0),
-        Action::ZoomReset,
-    ),
+    (keys::VIEW_EDITOR, Action::SetView(ViewMode::Editor)),
+    (keys::VIEW_SPLIT, Action::SetView(ViewMode::Split)),
+    (keys::VIEW_PREVIEW, Action::SetView(ViewMode::Preview)),
+    (keys::TOGGLE_OUTLINE, Action::ToggleOutline),
+    (keys::TOGGLE_LINE_NUMBERS, Action::ToggleLineNumbers),
+    (keys::CYCLE_THEME, Action::CycleTheme),
+    (keys::ZOOM_IN, Action::ZoomIn),
+    // 主键盘上的 "+" 得按 Shift+"="，所以 "=" 也收
+    (keys::ZOOM_IN_EQUALS, Action::ZoomIn),
+    (keys::ZOOM_OUT, Action::ZoomOut),
+    (keys::ZOOM_RESET, Action::ZoomReset),
     // 查找
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::F),
-        Action::OpenFind,
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::G),
-        Action::FindStep(1),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::G),
-        Action::FindStep(-1),
-    ),
+    (keys::FIND, Action::OpenFind),
+    (keys::FIND_NEXT, Action::FindStep(1)),
+    (keys::FIND_PREV, Action::FindStep(-1)),
     // Markdown 格式化
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::B),
-        Action::WrapSelection("**", "**"),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::I),
-        Action::WrapSelection("*", "*"),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::X),
-        Action::WrapSelection("~~", "~~"),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND, Key::K),
-        Action::WrapSelection("[", "](url)"),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C),
-        Action::WrapSelection("`", "`"),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::U),
-        Action::ToggleLinePrefix("- "),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P),
-        Action::ToggleLinePrefix("> "),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num1),
-        Action::SetHeading(1),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num2),
-        Action::SetHeading(2),
-    ),
-    (
-        KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num3),
-        Action::SetHeading(3),
-    ),
+    (keys::BOLD, Action::WrapSelection("**", "**")),
+    (keys::ITALIC, Action::WrapSelection("*", "*")),
+    (keys::STRIKETHROUGH, Action::WrapSelection("~~", "~~")),
+    (keys::LINK, Action::WrapSelection("[", "](url)")),
+    (keys::INLINE_CODE, Action::WrapSelection("`", "`")),
+    (keys::BULLET_LIST, Action::ToggleLinePrefix("- ")),
+    (keys::BLOCKQUOTE, Action::ToggleLinePrefix("> ")),
+    (keys::HEADING1, Action::SetHeading(1)),
+    (keys::HEADING2, Action::SetHeading(2)),
+    (keys::HEADING3, Action::SetHeading(3)),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 同一个按键绑两个动作时，`consume_shortcut` 只会轮到第一个 —— 第二个静默失效。
+    #[test]
+    fn no_duplicate_bindings() {
+        for (i, (keys, action)) in SHORTCUTS.iter().enumerate() {
+            for (other_keys, other_action) in &SHORTCUTS[i + 1..] {
+                assert_ne!(
+                    keys, other_keys,
+                    "{keys:?} 同时绑给了 {action:?} 和 {other_action:?}"
+                );
+            }
+        }
+    }
+}

@@ -13,6 +13,7 @@ use egui::{
 };
 
 use crate::app::{Action, App, editor_id};
+use crate::shortcuts::fill_keys;
 
 /// 行号与右边界之间的距离。
 const GUTTER_PAD: f32 = 9.0;
@@ -321,11 +322,12 @@ fn find_bar(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                     actions.push(Action::FindStep(1));
                 }
 
+                let footer = fill_keys(ui.ctx(), s.find_footer);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui.button(s.find_close).clicked() {
                         actions.push(Action::CloseFind);
                     }
-                    ui.label(RichText::new(s.find_footer).small().weak());
+                    ui.label(RichText::new(footer).small().weak());
                 });
             });
         });

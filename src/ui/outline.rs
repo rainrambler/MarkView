@@ -5,6 +5,7 @@ use egui::{Align, Layout, RichText, ScrollArea, Sense, Ui};
 use crate::app::{Action, App, Reveal};
 use crate::i18n::fill;
 use crate::markdown;
+use crate::shortcuts;
 
 /// 标题在侧栏里最多显示这么多字符，超出打省略号（完整文本放在悬停提示里）。
 const MAX_TITLE_CHARS: usize = 34;
@@ -19,6 +20,8 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
         ..
     } = app;
     let s = prefs.language.strings();
+    // 提示里的 {toggle_outline} 换成当前平台的按键标签
+    let hide_hint = shortcuts::fill_keys(ui.ctx(), s.outline_hide_hint);
 
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
@@ -27,11 +30,7 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(s.outline_title).strong());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui
-                        .small_button("✕")
-                        .on_hover_text(s.outline_hide_hint)
-                        .clicked()
-                    {
+                    if ui.small_button("✕").on_hover_text(&hide_hint).clicked() {
                         prefs.show_outline = false;
                     }
                     if !headings.is_empty() {

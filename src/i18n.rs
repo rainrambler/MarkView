@@ -11,6 +11,9 @@
 //! should go through [`Strings::lines`] / [`Strings::words`] / [`Strings::chars`]
 //! so English can pick the singular form.
 //!
+//! 快捷键**不要写死**（`⌘S` 在 Windows 上就成了错字）：用 `{save}` 这样的占位符，
+//! 画界面时交给 [`crate::shortcuts::fill_keys`] 换成当前平台的按键标签。
+//!
 //! Note: log lines written to stderr (`eprintln!`) are deliberately **not**
 //! translated — they are developer-facing and always English.
 
@@ -322,14 +325,13 @@ static EN: Strings = Strings {
     status_eol_hint: "Line ending style — written back unchanged when saving",
     status_bom_hint: "File starts with a UTF-8 BOM; it is restored when saving",
     status_lossy_badge: "⚠ Not UTF-8",
-    status_lossy_hint:
-        "The file is not valid UTF-8 and was decoded lossily; saving will overwrite the original",
-    hint_zoom_in: "Zoom in (⌘+)",
-    hint_zoom_out: "Zoom out (⌘-)",
-    hint_view_editor: "Editor only (⌘1)",
-    hint_view_split: "Split view (⌘2)",
-    hint_view_preview: "Preview only (⌘3)",
-    hint_cycle_theme: "Cycle theme (⌘⇧T)",
+    status_lossy_hint: "The file is not valid UTF-8 and was decoded lossily; saving will overwrite the original",
+    hint_zoom_in: "Zoom in ({zoom_in})",
+    hint_zoom_out: "Zoom out ({zoom_out})",
+    hint_view_editor: "Editor only ({view_editor})",
+    hint_view_split: "Split view ({view_split})",
+    hint_view_preview: "Preview only ({view_preview})",
+    hint_cycle_theme: "Cycle theme ({cycle_theme})",
 
     find_label: "Find",
     find_hint: "Search…",
@@ -338,10 +340,10 @@ static EN: Strings = Strings {
     find_prev: "Previous",
     find_next: "Next",
     find_close: "Close",
-    find_footer: "⌘G next · Esc to close",
+    find_footer: "{find_next} next · Esc to close",
 
     outline_title: "Outline",
-    outline_hide_hint: "Hide the outline (⌘⇧O)",
+    outline_hide_hint: "Hide the outline ({toggle_outline})",
     outline_empty: "No headings yet",
     outline_empty_hint: "Start a line with # ## or ###",
     outline_untitled: "(empty heading)",
@@ -362,23 +364,35 @@ static EN: Strings = Strings {
     shortcuts_title: "Keyboard shortcuts",
     shortcuts: &[
         ("File", ""),
-        ("⌘N / ⌘O", "New / Open"),
-        ("⌘S / ⌘⇧S", "Save / Save As"),
-        ("⌘E", "Export as HTML"),
+        ("{new} / {open}", "New / Open"),
+        ("{save} / {save_as}", "Save / Save As"),
+        ("{export_html}", "Export as HTML"),
         ("View", ""),
-        ("⌘1 / ⌘2 / ⌘3", "Editor only / Split / Preview only"),
-        ("⌘⇧O / ⌘⇧L", "Outline / Line numbers"),
-        ("⌘⇧T", "Cycle theme"),
-        ("⌘+ / ⌘- / ⌘0", "Zoom in / out / reset"),
+        (
+            "{view_editor} / {view_split} / {view_preview}",
+            "Editor only / Split / Preview only",
+        ),
+        (
+            "{toggle_outline} / {toggle_line_numbers}",
+            "Outline / Line numbers",
+        ),
+        ("{cycle_theme}", "Cycle theme"),
+        (
+            "{zoom_in} / {zoom_out} / {zoom_reset}",
+            "Zoom in / out / reset",
+        ),
         ("Edit", ""),
-        ("⌘Z / ⌘⇧Z", "Undo / Redo"),
-        ("⌘B / ⌘I / ⌘⇧X", "Bold / Italic / Strikethrough"),
-        ("⌘K / ⌘⇧C", "Link / Inline code"),
-        ("⌘⇧U / ⌘⇧P", "Bullet list / Blockquote"),
-        ("⌘⌥1 / ⌘⌥2 / ⌘⌥3", "Heading 1 / 2 / 3"),
+        ("{undo} / {redo}", "Undo / Redo"),
+        (
+            "{bold} / {italic} / {strikethrough}",
+            "Bold / Italic / Strikethrough",
+        ),
+        ("{link} / {inline_code}", "Link / Inline code"),
+        ("{bullet_list} / {blockquote}", "Bullet list / Blockquote"),
+        ("{heading1} / {heading2} / {heading3}", "Heading 1 / 2 / 3"),
         ("Find", ""),
-        ("⌘F", "Open the find bar"),
-        ("⌘G / ⌘⇧G", "Next / previous match"),
+        ("{find}", "Open the find bar"),
+        ("{find_next} / {find_prev}", "Next / previous match"),
         ("Esc", "Close the find bar or a dialog"),
     ],
 
@@ -489,12 +503,12 @@ static ZH: Strings = Strings {
     status_bom_hint: "文件带头部 UTF-8 BOM，保存时会补回",
     status_lossy_badge: "⚠ 非 UTF-8",
     status_lossy_hint: "原文件不是合法 UTF-8，已按有损方式解码；保存会覆盖原文",
-    hint_zoom_in: "放大（⌘+）",
-    hint_zoom_out: "缩小（⌘-）",
-    hint_view_editor: "只看编辑区（⌘1）",
-    hint_view_split: "左右分栏（⌘2）",
-    hint_view_preview: "只看预览（⌘3）",
-    hint_cycle_theme: "切换配色（⌘⇧T）",
+    hint_zoom_in: "放大（{zoom_in}）",
+    hint_zoom_out: "缩小（{zoom_out}）",
+    hint_view_editor: "只看编辑区（{view_editor}）",
+    hint_view_split: "左右分栏（{view_split}）",
+    hint_view_preview: "只看预览（{view_preview}）",
+    hint_cycle_theme: "切换配色（{cycle_theme}）",
 
     find_label: "查找",
     find_hint: "关键字…",
@@ -503,10 +517,10 @@ static ZH: Strings = Strings {
     find_prev: "上一个",
     find_next: "下一个",
     find_close: "关闭",
-    find_footer: "⌘G 下一个 · Esc 关闭",
+    find_footer: "{find_next} 下一个 · Esc 关闭",
 
     outline_title: "大纲",
-    outline_hide_hint: "隐藏大纲（⌘⇧O）",
+    outline_hide_hint: "隐藏大纲（{toggle_outline}）",
     outline_empty: "还没有标题",
     outline_empty_hint: "用 # ## ### 起一行就有了",
     outline_untitled: "（空标题）",
@@ -527,23 +541,35 @@ static ZH: Strings = Strings {
     shortcuts_title: "快捷键",
     shortcuts: &[
         ("文件", ""),
-        ("⌘N / ⌘O", "新建 / 打开"),
-        ("⌘S / ⌘⇧S", "保存 / 另存为"),
-        ("⌘E", "导出为 HTML"),
+        ("{new} / {open}", "新建 / 打开"),
+        ("{save} / {save_as}", "保存 / 另存为"),
+        ("{export_html}", "导出为 HTML"),
         ("视图", ""),
-        ("⌘1 / ⌘2 / ⌘3", "只看编辑 / 左右分栏 / 只看预览"),
-        ("⌘⇧O / ⌘⇧L", "大纲 / 行号"),
-        ("⌘⇧T", "切换配色"),
-        ("⌘+ / ⌘- / ⌘0", "放大 / 缩小 / 重置"),
+        (
+            "{view_editor} / {view_split} / {view_preview}",
+            "只看编辑 / 左右分栏 / 只看预览",
+        ),
+        ("{toggle_outline} / {toggle_line_numbers}", "大纲 / 行号"),
+        ("{cycle_theme}", "切换配色"),
+        (
+            "{zoom_in} / {zoom_out} / {zoom_reset}",
+            "放大 / 缩小 / 重置",
+        ),
         ("编辑", ""),
-        ("⌘Z / ⌘⇧Z", "撤销 / 重做"),
-        ("⌘B / ⌘I / ⌘⇧X", "加粗 / 斜体 / 删除线"),
-        ("⌘K / ⌘⇧C", "链接 / 行内代码"),
-        ("⌘⇧U / ⌘⇧P", "无序列表 / 引用"),
-        ("⌘⌥1 / ⌘⌥2 / ⌘⌥3", "一级 / 二级 / 三级标题"),
+        ("{undo} / {redo}", "撤销 / 重做"),
+        (
+            "{bold} / {italic} / {strikethrough}",
+            "加粗 / 斜体 / 删除线",
+        ),
+        ("{link} / {inline_code}", "链接 / 行内代码"),
+        ("{bullet_list} / {blockquote}", "无序列表 / 引用"),
+        (
+            "{heading1} / {heading2} / {heading3}",
+            "一级 / 二级 / 三级标题",
+        ),
         ("查找", ""),
-        ("⌘F", "打开查找栏"),
-        ("⌘G / ⌘⇧G", "下一个 / 上一个匹配"),
+        ("{find}", "打开查找栏"),
+        ("{find_next} / {find_prev}", "下一个 / 上一个匹配"),
         ("Esc", "关闭查找栏或弹窗"),
     ],
 
@@ -641,5 +667,33 @@ mod tests {
         assert_eq!(en.about_stack.len(), zh.about_stack.len());
         assert_eq!(en.html_lang, "en");
         assert_eq!(zh.html_lang, "zh");
+    }
+
+    /// 模板里的 `{name}` 名字，按出现顺序。
+    fn placeholder_names(template: &str) -> Vec<&str> {
+        template
+            .split('{')
+            .skip(1)
+            .filter_map(|rest| rest.split('}').next())
+            .collect()
+    }
+
+    /// 每一行的按键占位符两种语言必须一一对应 —— 否则一边写着 `{find_next}`、
+    /// 另一边写成 `{find_prev}`，两边都填得上，却指着不同的按键。
+    #[test]
+    fn shortcut_rows_name_the_same_keys_in_both_languages() {
+        let en = Language::En.strings();
+        let zh = Language::Zh.strings();
+
+        for (index, ((en_keys, en_desc), (zh_keys, zh_desc))) in
+            en.shortcuts.iter().zip(zh.shortcuts).enumerate()
+        {
+            assert_eq!(
+                placeholder_names(en_keys),
+                placeholder_names(zh_keys),
+                "快捷键表第 {index} 行（{en_desc} / {zh_desc}）的占位符对不上：\
+                 {en_keys} vs {zh_keys}"
+            );
+        }
     }
 }

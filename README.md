@@ -95,9 +95,41 @@ macOS ignores window-level icons — the Dock and Finder only read `CFBundleIcon
 packaging/build-app.sh          # -> dist/MarkView.app
 ```
 
+### Windows executable icon
+
+Explorer takes the icon from the **executable's own resources**, so it has to be linked in at
+build time — `ViewportBuilder::with_icon` in `main.rs` only affects the title bar and taskbar, and
+nothing can change the file's icon at runtime. `build.rs` handles this by compiling
+`assets/markview.rc`, which references `assets/AppIcon.ico`:
+
+```powershell
+cargo build --release           # target/release/markview.exe already carries the icon
+```
+
+The `.ico` is generated from code like every other icon — it is never drawn by hand or exported
+from a design tool:
+
+```bash
+cargo run --release --example make_icon    # rewrites assets/AppIcon.ico (+ .icns on macOS)
+```
+
+### Windows release package
+
+```powershell
+pwsh -File packaging/build-release.ps1      # -> dist/markview-<version>-<target>.zip
+```
+
+It builds with `--locked`, refuses to package an executable that has no icon resource, and
+writes the zip next to a `SHA256SUMS.txt` in `sha256sum -c` format. macOS artifacts come from
+`packaging/build-app.sh` instead.
+
 ## Project layout
 
 ```
+build.rs           Build script: links the Windows icon resource (see above)
+examples/
+  make_icon.rs     Draws every icon size from code, incl. the multi-size .ico
+assets/            Generated icons: AppIcon.ico (Windows), AppIcon.icns (macOS), PNG master
 src/
   main.rs          Entry point: window options, drag-and-drop, render backend
   app.rs           Application state machine: action queue, main loop, shortcut table

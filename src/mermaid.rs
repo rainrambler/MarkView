@@ -85,9 +85,7 @@ pub fn split(text: &str) -> Vec<Segment<'_>> {
 /// 正文里有没有 Mermaid 块。预览据此决定走整篇渲染还是分段渲染。
 pub fn has_mermaid(text: &str) -> bool {
     // 回调返回 false 表示"不用再看了"，于是 collect 返回 false
-    !collect(text, |segment| {
-        !matches!(segment, Segment::Mermaid { .. })
-    })
+    !collect(text, |segment| !matches!(segment, Segment::Mermaid { .. }))
 }
 
 /// 扫一遍正文，每切出一段就调一次 `on_segment`（返回 false 表示提前结束）。
@@ -172,10 +170,7 @@ fn collect<'a>(text: &'a str, mut on_segment: impl FnMut(Segment<'a>) -> bool) -
 
 /// 是否是开启围栏的行。返回 (围栏字符, 长度, 信息串)。
 fn fence_open(trimmed: &str) -> Option<(char, usize, &str)> {
-    let ch = trimmed
-        .chars()
-        .next()
-        .filter(|c| *c == '`' || *c == '~')?;
+    let ch = trimmed.chars().next().filter(|c| *c == '`' || *c == '~')?;
     let len = trimmed.chars().take_while(|c| *c == ch).count();
     // 反引号/波浪号都是 ASCII，`len` 既是字符数也是字节偏移
     (len >= 3).then(|| (ch, len, &trimmed[len..]))
@@ -305,7 +300,8 @@ impl MermaidCache {
 
         self.tick += 1;
         if block >= self.blocks.len() {
-            self.blocks.resize_with(block + 1, || BlockState::new(key, now));
+            self.blocks
+                .resize_with(block + 1, || BlockState::new(key, now));
         }
         // 借用一个作用域里就还掉：下面还要 `&self` 去渲染，不能一直握着这个可变借用
         {
@@ -618,7 +614,9 @@ mod tests {
                 .expect("渲染报错")
                 .expect("没认出这是一张图");
 
-            let image = image::load_from_memory(&png).expect("PNG 解不开").to_rgba8();
+            let image = image::load_from_memory(&png)
+                .expect("PNG 解不开")
+                .to_rgba8();
             assert!(image.width() > 8 && image.height() > 8);
             // 角落一定是画布本身，不可能是节点
             let expected = image::Rgba([canvas.r(), canvas.g(), canvas.b(), 255]);
