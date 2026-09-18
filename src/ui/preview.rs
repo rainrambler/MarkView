@@ -3,15 +3,17 @@
 //! 这里用 `show_mut` 而不是 `show`，于是预览里的任务列表复选框是可以点的，
 //! 点了会直接改回源文本（也就是"所见即所得"的那一点点）。
 //!
-//! 正文里出现 ```mermaid 时走另一条路：`egui_commonmark` 没有自定义代码块渲染的钩子，
+//! 正文里出现 `mermaid` 围栏时走另一条路：`egui_commonmark` 没有自定义代码块渲染的钩子，
 //! 所以按围栏把正文切成若干段 —— Markdown 段照旧交给它，Mermaid 段交给
 //! `crate::mermaid` 渲染成贴图。没有 Mermaid 的文档仍然整篇一次渲染。
+
+use std::path::Path;
 
 use egui::{ScrollArea, Ui};
 use egui_commonmark::CommonMarkViewer;
 
 use crate::app::{Action, App};
-use crate::document::Document;
+use crate::i18n::fill;
 use crate::mermaid::{self, Segment};
 
 /// 预览内容左右各留多少内边距，图片最大宽度据此计算。
@@ -26,16 +28,17 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
         ..
     } = app;
 
+    let strings = prefs.language.strings();
     let mut changed = false;
     let content_width = (ui.available_width() - PAD_X * 2.0).max(160.0);
     // 提前算好基地址：闭包里就只借用 prefs，下面才能同时可变借用 doc.text
-    let base_uri = base_uri(doc);
+    let base_uri = base_uri(doc.dir().as_deref());
 
     egui::Frame::new()
         .inner_margin(egui::Margin::symmetric(PAD_X as i8, 16))
         .show(ui, |ui| {
             ScrollArea::vertical()
-                .id_salt("mdviewer.preview.scroll")
+                .id_salt("markview.preview.scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     let viewer = || {
@@ -85,7 +88,7 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                                     viewer().show_mut(ui, cache, &mut raw.to_owned());
                                     ui.colored_label(
                                         ui.visuals().warn_fg_color,
-                                        format!("Mermaid：{err}"),
+                                        fill(strings.mermaid_prefix, &[("err", &err.message(strings))]),
                                     );
                                 }
                                 block += 1;
@@ -106,17 +109,93 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
 }
 
 /// 给预览里的相对图片路径拼一个 `file://` 基地址。
-fn base_uri(doc: &Document) -> String {
-    match doc.dir() {
-        Some(dir) => {
-            let path = dir.to_string_lossy();
-            // 结尾必须有斜杠，否则会和文件名粘在一起
-            if path.ends_with('/') {
-                format!("file://{path}")
-            } else {
-                format!("file://{path}/")
-            }
-        }
-        None => "file://".to_owned(),
+///
+/// `dir` 是文档所在目录；`None` 表示文档还没保存过，退回当前目录。
+fn base_uri(dir: Option<&Path>) -> String {
+    let Some(dir) = dir else {
+        return "file://".to_owned();
+    };
+
+    let path = file_url_path(&dir.to_string_lossy());
+    // 三种形状，拼出来的 URL 各不相同：
+    //   `//server/share`（UNC）-> `file://server/share/`，主机名走 authority 位
+    //   `/home/u`             -> `file:///home/u/`，多一个斜杠凑出空 authority
+    //   `D:/a`                -> `file:///D:/a/`，同上，否则盘符会被当成主机名
+    let uri = if let Some(unc) = path.strip_prefix("//") {
+        format!("file://{unc}")
+    } else if path.starts_with('/') {
+        format!("file://{path}")
+    } else {
+        format!("file:///{path}")
+    };
+
+    // 结尾必须有斜杠，否则会和文件名粘在一起
+    format!("{}/", uri.trim_end_matches('/'))
+}
+
+/// 本地目录 -> 能塞进 `file://` URL 的路径片段。
+///
+/// Windows 上有两个坑：
+///  * `fs::canonicalize` 返回的是 `\\?\D:\...` 扩展长度形式。原样放进 URL 就不再是
+///    合法地址了（`?` 会被当成 query 的分隔符），微软家的 `.jpg` 图片就此消失；
+///  * 路径分隔符是反斜杠，而 URL 只认正斜杠。
+fn file_url_path(path: &str) -> String {
+    // `\\?\UNC\server\share` 就是 `\\server\share` 的扩展长度写法，先还原成后者，
+    // 好让下面统一按 `\\` 开头处理
+    let path = match path.strip_prefix(r"\\?\UNC\") {
+        Some(rest) => format!(r"\\{rest}"),
+        None => path.strip_prefix(r"\\?\").unwrap_or(path).to_owned(),
+    };
+
+    path.replace('\\', "/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_drive_paths_keep_the_drive_out_of_the_host_slot() {
+        // `file://D:/a/` 会把 `D:` 当成主机名，必须写成 `file:///D:/a/`
+        assert_eq!(
+            base_uri(Some(Path::new(r"D:\docs\notes"))),
+            "file:///D:/docs/notes/"
+        );
+    }
+
+    #[test]
+    fn canonicalized_windows_paths_lose_the_extended_length_prefix() {
+        // fs::canonicalize 给的就是这个形状，`?` 直接塞进 URL 会变成 query 分隔符
+        assert_eq!(
+            base_uri(Some(Path::new(r"\\?\D:\docs"))),
+            "file:///D:/docs/"
+        );
+        assert_eq!(
+            base_uri(Some(Path::new(r"\\?\UNC\server\share\docs"))),
+            "file://server/share/docs/"
+        );
+        assert_eq!(
+            base_uri(Some(Path::new(r"\\server\share\docs"))),
+            "file://server/share/docs/"
+        );
+    }
+
+    #[test]
+    fn unix_paths_become_a_three_slash_file_url() {
+        assert_eq!(
+            base_uri(Some(Path::new("/home/u/docs"))),
+            "file:///home/u/docs/"
+        );
+    }
+
+    #[test]
+    fn trailing_separators_do_not_double_up() {
+        // Path::new("/a/") 的 to_string_lossy 可能带尾斜杠，拼完不能变成 //
+        assert_eq!(base_uri(Some(Path::new("/a/"))), "file:///a/");
+    }
+
+    #[test]
+    fn an_unsaved_document_falls_back_to_the_plain_scheme() {
+        assert_eq!(base_uri(None), "file://");
     }
 }

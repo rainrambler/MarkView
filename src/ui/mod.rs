@@ -14,7 +14,7 @@ use crate::prefs::Preferences;
 
 /// 只在第一次进入时定制一次样式；之后 egui 在深浅色之间切换会带着这些改动。
 fn style_tuned() -> Id {
-    Id::new("mdviewer.style_tuned")
+    Id::new("markview.style_tuned")
 }
 
 /// 应用主题与样式微调。每帧调用是安全的（`set_theme` 只是写一个选项）。

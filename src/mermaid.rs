@@ -1,4 +1,4 @@
-//! Mermaid 渲染：把 ```mermaid 围栏交给纯 Rust 的 `merman` 画成位图。
+//! Mermaid 渲染：把 `mermaid` 围栏交给纯 Rust 的 `merman` 画成位图。
 //!
 //! 为什么要自己切段：`egui_commonmark` 没有"自定义代码块渲染"的钩子
 //! （它只开放了行内 HTML 和公式两个回调），围栏代码块一律走语法高亮那条路。
@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 use egui::{Color32, TextureHandle, TextureOptions, Ui};
 use merman::render::raster::RasterOptions;
 use merman::render::{HeadlessRenderer, HostThemeProfile, HostThemeRootBackground};
+
+use crate::i18n::{Strings, fill};
 
 /// 缓存里最多留几张贴图。超了就把最久没用过的那张挤出去 —— 贴图是显存，不能只进不出。
 const MAX_ENTRIES: usize = 16;
@@ -185,7 +187,7 @@ fn is_close(trimmed: &str, ch: char, len: usize) -> bool {
     run >= len && trimmed[run..].trim().is_empty()
 }
 
-/// 围栏信息串里第一个词是不是 `mermaid`（` ```mermaid ` 和 ` ```mermaid title=x ` 都算）。
+/// 围栏信息串里第一个词是不是 `mermaid`（`mermaid` 和 `mermaid title=x` 都算）。
 fn is_mermaid_info(info: &str) -> bool {
     info.split_whitespace()
         .next()
@@ -201,7 +203,32 @@ struct Ready {
 
 enum Entry {
     Ready(Ready),
-    Failed(String),
+    Failed(MermaidError),
+}
+
+/// 渲染不出来的原因。
+///
+/// 存进缓存的就是它，所以得能 `Clone`；文案在显示时才按当前界面语言拼，
+/// 这样切换语言不必清缓存。
+#[derive(Debug, Clone)]
+pub enum MermaidError {
+    /// 源码不像一张 Mermaid 图（打字打到一半通常就是这个）。
+    NotADiagram,
+    /// 光栅化出来的 PNG 解不开。
+    Decode(String),
+    /// 缓存项被挤掉了。理论上到不了这里。
+    CacheMiss,
+}
+
+impl MermaidError {
+    /// 渲染成当前界面语言的一句话。
+    pub fn message(&self, s: &Strings) -> String {
+        match self {
+            Self::NotADiagram => s.mermaid_not_a_diagram.to_owned(),
+            Self::Decode(err) => fill(s.mermaid_decode_failed, &[("err", err)]),
+            Self::CacheMiss => s.mermaid_not_a_diagram.to_owned(),
+        }
+    }
 }
 
 /// 正文里第 N 个 Mermaid 块的状态。按块号排队 —— 块号会随着编辑漂移，
@@ -267,7 +294,7 @@ impl MermaidCache {
         block: usize,
         source: &str,
         width: f32,
-    ) -> Result<(), String> {
+    ) -> Result<(), MermaidError> {
         let ctx = ui.ctx().clone();
         let ppp = ctx.pixels_per_point();
         let dark = ui.visuals().dark_mode;
@@ -335,7 +362,7 @@ impl MermaidCache {
         }
 
         let Some((entry, used)) = self.entries.get_mut(&draw) else {
-            return Err("缓存里没有这张图".to_owned());
+            return Err(MermaidError::CacheMiss);
         };
         *used = self.tick;
 
@@ -361,7 +388,7 @@ impl MermaidCache {
         dark: bool,
         ppp: f32,
         canvas: Color32,
-    ) -> Result<Ready, String> {
+    ) -> Result<Ready, MermaidError> {
         // 配色跟着 egui 走。host theme 会编译成一份 MermaidConfig + 输出管线，
         // 每次渲染都重建一遍，但只有缓存没命中时才会走到这里，不心疼。
         let profile = theme(dark, canvas);
@@ -376,15 +403,15 @@ impl MermaidCache {
 
         let png = renderer
             .render_png_sync(source, &options)
-            .map_err(|err| err.to_string())?
-            .ok_or_else(|| "这段源码不像 Mermaid 图".to_owned())?;
+            .map_err(|err| MermaidError::Decode(err.to_string()))?
+            .ok_or(MermaidError::NotADiagram)?;
 
         let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
-            .map_err(|err| format!("PNG 解码失败：{err}"))?
+            .map_err(|err| MermaidError::Decode(err.to_string()))?
             .into_rgba8();
         let (width, height) = image.dimensions();
         let texture = ctx.load_texture(
-            format!("mdviewer.mermaid.{key:016x}"),
+            format!("markview.mermaid.{key:016x}"),
             egui::ColorImage::from_rgba_unmultiplied(
                 [width as usize, height as usize],
                 image.as_raw(),
@@ -524,7 +551,7 @@ mod tests {
         assert!(has_mermaid("```mermaid title=x\nA --> B\n```\n"));
     }
 
-    /// 普通围栏里的 ```mermaid 只是示例代码，不能被当成图。
+    /// 普通围栏里的 `mermaid` 只是示例代码，不能被当成图。
     #[test]
     fn fence_inside_a_code_block_is_not_mermaid() {
         let text = "````text\n```mermaid\nA --> B\n```\n````\n";

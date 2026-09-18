@@ -11,8 +11,8 @@ pub struct Heading {
 
 /// 扫描 ATX 标题（`# foo`）。
 ///
-/// 会跳过围栏代码块内部的内容 —— 否则一个 ``` 里写着 `# 注释` 的 shell 片段
-/// 就会污染大纲。围栏要求至少 3 个 ` 或 ~，且闭合围栏的字符与长度不短于开启的。
+/// 会跳过围栏代码块内部的内容 —— 否则一个代码块里写着 `# 注释` 的 shell 片段
+/// 就会污染大纲。围栏要求至少 3 个 `` ` `` 或 `~`，且闭合围栏的字符与长度不短于开启的。
 pub fn outline(text: &str) -> Vec<Heading> {
     let mut headings = Vec::new();
     // Some((围栏字符, 围栏长度))
@@ -191,7 +191,10 @@ pub fn line_char_offset(text: &str, line: usize) -> usize {
 }
 
 /// 把 Markdown 转成一份自带样式的完整 HTML。
-pub fn to_html(text: &str, title: &str) -> String {
+///
+/// `lang` 写进 `<html lang="...">`，跟着界面语言走 —— 它会影响浏览器的
+/// 断行规则、拼写检查和屏幕阅读器的发音。
+pub fn to_html(text: &str, title: &str, lang: &str) -> String {
     use pulldown_cmark::{Options, Parser, html};
 
     let mut opts = Options::empty();
@@ -206,7 +209,7 @@ pub fn to_html(text: &str, title: &str) -> String {
 
     format!(
         "<!doctype html>\n\
-         <html lang=\"zh\">\n\
+         <html lang=\"{lang}\">\n\
          <head>\n\
          <meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
@@ -217,6 +220,7 @@ pub fn to_html(text: &str, title: &str) -> String {
          <main class=\"markdown-body\">\n{body}</main>\n\
          </body>\n\
          </html>\n",
+        lang = escape_html(lang),
         title = escape_html(title),
         css = EXPORT_CSS,
     )

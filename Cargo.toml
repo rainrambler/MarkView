@@ -3,8 +3,14 @@ name = "markview"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-description = "原生 Markdown 编辑器，带实时预览"
+description = "A native Markdown editor and viewer with live preview, written in Rust"
 license = "MIT"
+readme = "README.md"
+keywords = ["markdown", "editor", "viewer", "egui", "mermaid"]
+categories = ["gui", "text-editors", "visualization"]
+
+repository = "https://github.com/rainrambler/markview"
+homepage = "https://github.com/rainrambler/markview"
 
 [dependencies]
 # 窗口 + 渲染（wgpu/DX12 后端），persistence 用于记住窗口与偏好设置

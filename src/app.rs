@@ -11,22 +11,26 @@ use egui::{Context, Key, KeyboardShortcut, Modifiers, ViewportCommand};
 use egui_commonmark::CommonMarkCache;
 use egui_extras::syntax_highlighting::CodeTheme;
 
-use crate::document::Document;
+use crate::document::{DocError, Document};
 use crate::fonts;
+use crate::i18n::{Language, fill};
 use crate::markdown::{self, Heading, Stats, byte_to_char};
 use crate::mermaid;
 use crate::prefs::{Preferences, ViewMode};
 use crate::ui;
 use crate::ui::find::FindState;
 
-pub const WINDOW_TITLE: &str = "Markdown 查看器";
+/// 产品名。窗口标题、`About` 弹窗都引它，改名字只需要动这一处。
+///
+/// 它同时也是 eframe 存偏好设置用的目录名，改了会让老用户的设置"失效"一次。
+pub const APP_NAME: &str = "MarkView";
 
 /// 偏好设置在 eframe storage 里的键。
-const PREFS_KEY: &str = "mdviewer.preferences.v1";
+const PREFS_KEY: &str = "markview.preferences.v1";
 
 /// 编辑区 TextEdit 的稳定 Id。查找跳转、加粗等操作都要靠它读写光标状态。
 pub fn editor_id() -> egui::Id {
-    egui::Id::new("mdviewer.editor.text")
+    egui::Id::new("markview.editor.text")
 }
 
 /// 一个待跳转的位置，字符序号（不是字节）。
@@ -88,6 +92,8 @@ pub enum Action {
     ForceQuit,
 
     SetView(ViewMode),
+    /// 切界面语言。同时把"最近打开"之类不受影响的东西原样留下。
+    SetLanguage(Language),
     ToggleOutline,
     ToggleLineNumbers,
     ToggleWrap,
@@ -123,15 +129,37 @@ pub struct Toast {
 
 /// 开发/验证用的截图钩子。
 ///
-/// 用法：`MDVIEWER_SCREENSHOT=/tmp/a.png mdviewer demo.md`
+/// 用法：`MARKVIEW_SCREENSHOT=/tmp/a.png markview demo.md`
 /// 程序会在界面稳定几帧后把窗口内容写成 PNG 然后自己退出。
 /// 存在的意义是在没有"屏幕录制"权限的机器上也能验收渲染效果
 /// （egui 的截图走的是应用自己的帧缓冲，不依赖系统截屏）。
+///
+/// 等几帧是可以用 `MARKVIEW_SCREENSHOT_FRAMES` 调的：图片是异步解码的，
+/// 文档里挂了张大图时默认的帧数可能不够，截出来就是空的（默认 30 帧约 0.5 秒）。
+///
+/// 旧名字 `MDVIEWER_SCREENSHOT` 仍然认，免得老脚本突然失灵。
 struct ScreenshotJob {
     path: PathBuf,
     /// 还要再等几帧，让 Markdown 缓存、图片加载都稳定下来。
     frames_left: u32,
     requested: bool,
+}
+
+/// 截图钩子写到哪里去，从环境变量读。两个名字都认：新名字优先，
+/// 老名字（`MDVIEWER_SCREENSHOT`）留给已经写好脚本的人。
+fn screenshot_path() -> Option<PathBuf> {
+    ["MARKVIEW_SCREENSHOT", "MDVIEWER_SCREENSHOT"]
+        .into_iter()
+        .find_map(std::env::var_os)
+        .map(PathBuf::from)
+}
+
+/// 截图前等几帧。给图片解码留时间，别把预览截成一片空白。
+fn screenshot_frames() -> u32 {
+    std::env::var("MARKVIEW_SCREENSHOT_FRAMES")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(30)
 }
 
 impl Toast {
@@ -177,8 +205,8 @@ pub struct App {
     bypass_guard: bool,
     /// 缓存标题，只有变了才发给窗口系统。
     last_title: Option<String>,
-    /// 启动时选中的中文字体，显示在"关于"里。
-    pub font_note: Option<String>,
+    /// 启动时选中的中文字体路径，"关于"弹窗里会提一句。
+    pub font_path: Option<&'static str>,
     /// 见 [`ScreenshotJob`]。
     screenshot: Option<ScreenshotJob>,
 }
@@ -217,10 +245,10 @@ impl App {
             reveal: None,
             bypass_guard: false,
             last_title: None,
-            font_note: font_path.map(|path| format!("中文字体：{path}")),
-            screenshot: std::env::var_os("MDVIEWER_SCREENSHOT").map(|path| ScreenshotJob {
-                path: PathBuf::from(path),
-                frames_left: 6,
+            font_path,
+            screenshot: screenshot_path().map(|path| ScreenshotJob {
+                path,
+                frames_left: screenshot_frames(),
                 requested: false,
             }),
         };
@@ -229,13 +257,16 @@ impl App {
         // 把持久化的缩放系数推给 egui（之后由 egui 的 zoom_factor 当唯一事实来源）
         app.prefs.push_zoom_to(&cc.egui_ctx);
 
-        // 支持 `mdviewer 笔记.md`
+        // 支持 `markview 笔记.md`
         if let Some(arg) = std::env::args_os().nth(1) {
             let path = PathBuf::from(arg);
             if path.is_file() {
                 app.load_path(path);
             } else {
-                app.set_toast_error(format!("找不到文件：{}", path.display()));
+                app.set_toast_error(fill(
+                    app.prefs.language.strings().toast_file_not_found,
+                    &[("path", &path.display().to_string())],
+                ));
             }
         }
         app
@@ -277,6 +308,7 @@ impl App {
     fn load_path(&mut self, path: PathBuf) {
         // 转成绝对路径：命令行传 `demo.md` 时 cwd 一变，最近文件列表就失效了
         let path = path.canonicalize().unwrap_or(path);
+        let s = self.prefs.language.strings();
 
         match Document::open(&path) {
             Ok(document) => {
@@ -293,20 +325,19 @@ impl App {
                 self.focus_editor = true;
                 self.prefs.touch_recent(&path);
 
+                let shown = path.display().to_string();
                 if lossy {
-                    self.set_toast_error(format!(
-                        "{} 不是合法的 UTF-8，已按有损方式打开",
-                        path.display()
-                    ));
+                    self.set_toast_error(fill(s.toast_lossy_open, &[("path", &shown)]));
                 } else {
-                    self.set_toast_info(format!("已打开 {}", path.display()));
+                    self.set_toast_info(fill(s.toast_opened, &[("path", &shown)]));
                 }
             }
-            Err(err) => self.set_toast_error(err),
+            Err(err) => self.set_toast_error(err.message(s)),
         }
     }
 
     fn do_new(&mut self) {
+        let s = self.prefs.language.strings();
         self.doc = Document::untitled();
         self.cache = CommonMarkCache::default();
         self.mermaid.clear();
@@ -317,14 +348,15 @@ impl App {
             char_end: 0,
         });
         self.focus_editor = true;
-        self.set_toast_info("已新建空白文档");
+        self.set_toast_info(s.toast_new_doc);
     }
 
     fn do_open_dialog(&mut self) {
+        let s = self.prefs.language.strings();
         let mut dialog = rfd::FileDialog::new()
-            .set_title("打开 Markdown 文件")
-            .add_filter("Markdown", &["md", "markdown", "mdx", "txt"])
-            .add_filter("所有文件", &["*"]);
+            .set_title(s.dialog_open_title)
+            .add_filter(s.filter_markdown, crate::document::MARKDOWN_EXTENSIONS)
+            .add_filter(s.filter_all_files, &["*"]);
         if let Some(dir) = self.prefs.last_dir.clone() {
             dialog = dialog.set_directory(dir);
         }
@@ -334,11 +366,16 @@ impl App {
     }
 
     pub fn save(&mut self, force_dialog: bool) {
+        let s = self.prefs.language.strings();
         if force_dialog || self.doc.path.is_none() {
             let mut dialog = rfd::FileDialog::new()
-                .set_title(if force_dialog { "另存为" } else { "保存" })
-                .add_filter("Markdown", &["md", "markdown", "mdx", "txt"])
-                .set_file_name(self.doc.display_name());
+                .set_title(if force_dialog {
+                    s.dialog_save_as_title
+                } else {
+                    s.dialog_save_title
+                })
+                .add_filter(s.filter_markdown, crate::document::MARKDOWN_EXTENSIONS)
+                .set_file_name(self.doc.display_name(s));
             if let Some(dir) = self.prefs.last_dir.clone() {
                 dialog = dialog.set_directory(dir);
             }
@@ -353,30 +390,33 @@ impl App {
         }
     }
 
-    fn finish_write(&mut self, result: Result<(), String>, path: PathBuf) {
+    fn finish_write(&mut self, result: Result<(), DocError>, path: PathBuf) {
+        let s = self.prefs.language.strings();
         match result {
             Ok(()) => {
                 // 文件此时已经存在，canonicalize 能成功
                 let path = path.canonicalize().unwrap_or(path);
                 self.prefs.touch_recent(&path);
-                self.set_toast_info(format!("已保存 {}", path.display()));
+                let shown = path.display().to_string();
+                self.set_toast_info(fill(s.toast_saved, &[("path", &shown)]));
             }
-            Err(err) => self.set_toast_error(err),
+            Err(err) => self.set_toast_error(err.message(s)),
         }
     }
 
     fn export_html(&mut self) {
+        let s = self.prefs.language.strings();
         let stem = self
             .doc
             .path
             .as_ref()
             .and_then(|p| p.file_stem())
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "未命名".to_owned());
+            .unwrap_or_else(|| s.untitled_stem.to_owned());
 
         let mut dialog = rfd::FileDialog::new()
-            .set_title("导出为 HTML")
-            .add_filter("HTML", &["html", "htm"])
+            .set_title(s.dialog_export_title)
+            .add_filter(s.filter_html, &["html", "htm"])
             .set_file_name(format!("{stem}.html"));
         if let Some(dir) = self.prefs.last_dir.clone() {
             dialog = dialog.set_directory(dir);
@@ -385,15 +425,19 @@ impl App {
             return;
         };
 
-        let html = markdown::to_html(&self.doc.text, &stem);
+        let html = markdown::to_html(&self.doc.text, &stem, s.html_lang);
         match std::fs::write(&path, html.as_bytes()) {
             Ok(()) => {
                 if let Some(dir) = path.parent() {
                     self.prefs.last_dir = Some(dir.to_path_buf());
                 }
-                self.set_toast_info(format!("已导出 {}", path.display()));
+                let shown = path.display().to_string();
+                self.set_toast_info(fill(s.toast_exported, &[("path", &shown)]));
             }
-            Err(err) => self.set_toast_error(format!("导出失败：{err}")),
+            Err(err) => self.set_toast_error(fill(
+                s.toast_export_failed,
+                &[("err", &err.to_string())],
+            )),
         }
     }
 
@@ -461,6 +505,7 @@ impl App {
                         self.focus_editor = true;
                     }
                 }
+                Action::SetLanguage(language) => self.prefs.language = language,
                 Action::ToggleOutline => self.prefs.show_outline = !self.prefs.show_outline,
                 Action::ToggleLineNumbers => {
                     self.prefs.show_line_numbers = !self.prefs.show_line_numbers;
@@ -576,10 +621,11 @@ impl App {
     }
 
     fn update_window_title(&mut self, ctx: &Context) {
+        let s = self.prefs.language.strings();
         let title = format!(
-            "{}{} · {WINDOW_TITLE}",
+            "{}{} · {APP_NAME}",
             if self.doc.dirty { "● " } else { "" },
-            self.doc.display_name()
+            self.doc.display_name(s)
         );
         if self.last_title.as_deref() != Some(title.as_str()) {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
@@ -611,7 +657,7 @@ impl App {
             ToastKind::Error => visuals.error_fg_color,
         };
 
-        egui::Area::new(egui::Id::new("mdviewer.toast"))
+        egui::Area::new(egui::Id::new("markview.toast"))
             .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -46.0))
             .order(egui::Order::Foreground)
             .interactable(false)
@@ -654,10 +700,11 @@ impl App {
 
                 match image::RgbaImage::from_raw(width, height, bytes) {
                     Some(buffer) => match buffer.save(&path) {
-                        Ok(()) => eprintln!("[mdviewer] 截图已保存：{}", path.display()),
-                        Err(err) => eprintln!("[mdviewer] 截图保存失败：{err}"),
+                        // 日志是给开发者看的，不跟着界面语言走
+                        Ok(()) => eprintln!("[markview] screenshot written to {}", path.display()),
+                        Err(err) => eprintln!("[markview] could not save screenshot: {err}"),
                     },
-                    None => eprintln!("[mdviewer] 截图尺寸与像素数不匹配"),
+                    None => eprintln!("[markview] screenshot dimensions do not match pixel count"),
                 }
             }
             self.screenshot = None;
@@ -698,13 +745,13 @@ impl eframe::App for App {
         // 大纲和编辑区依次从左侧切走空间，剩下的给预览。
         ui::menu::show(self, ui, &mut actions);
 
-        egui::Panel::bottom("mdviewer.status.bar")
+        egui::Panel::bottom("markview.status.bar")
             .show(ui, |ui| ui::status::show(self, ui, &mut actions));
 
         let show_outline =
             self.prefs.show_outline && !matches!(self.prefs.view_mode, ViewMode::Preview);
         if show_outline {
-            egui::Panel::left("mdviewer.outline.panel")
+            egui::Panel::left("markview.outline.panel")
                 .resizable(true)
                 .default_size(230.0)
                 .min_size(160.0)
@@ -722,7 +769,7 @@ impl eframe::App for App {
                     .show(ui, |ui| ui::preview::show(self, ui, &mut actions));
             }
             ViewMode::Split => {
-                egui::Panel::left("mdviewer.editor.panel")
+                egui::Panel::left("markview.editor.panel")
                     .resizable(true)
                     .default_size(620.0)
                     .min_size(260.0)

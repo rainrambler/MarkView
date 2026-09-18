@@ -73,7 +73,7 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                 };
 
                 scroll
-                    .id_salt("mdviewer.editor.scroll")
+                    .id_salt("markview.editor.scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.horizontal_top(|ui| {
@@ -260,19 +260,22 @@ fn line_col_of(text: &str, char_index: usize) -> (usize, usize) {
 // ------------------------------------------------------------------ 查找栏
 
 fn find_bar(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
-    let App { find, doc, .. } = app;
+    let App {
+        find, doc, prefs, ..
+    } = app;
+    let s = prefs.language.strings();
 
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
         .inner_margin(Margin::symmetric(10, 6))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("查找").small().strong());
+                ui.label(RichText::new(s.find_label).small().strong());
 
                 let response = ui.add(
                     TextEdit::singleline(&mut find.query)
-                        .id(egui::Id::new("mdviewer.find.query"))
-                        .hint_text("关键字…")
+                        .id(egui::Id::new("markview.find.query"))
+                        .hint_text(s.find_hint)
                         .desired_width(180.0)
                         .font(TextStyle::Monospace),
                 );
@@ -290,7 +293,7 @@ fn find_bar(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
 
                 if ui
                     .checkbox(&mut find.case_sensitive, "Aa")
-                    .on_hover_text("区分大小写")
+                    .on_hover_text(s.find_case_hint)
                     .changed()
                 {
                     find.mark_dirty();
@@ -299,7 +302,7 @@ fn find_bar(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                 if !find.query.is_empty() {
                     if find.matches.is_empty() {
                         ui.label(
-                            RichText::new("无匹配")
+                            RichText::new(s.find_no_match)
                                 .small()
                                 .color(ui.visuals().warn_fg_color),
                         );
@@ -311,18 +314,18 @@ fn find_bar(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                     }
                 }
 
-                if ui.button("上一个").clicked() {
+                if ui.button(s.find_prev).clicked() {
                     actions.push(Action::FindStep(-1));
                 }
-                if ui.button("下一个").clicked() {
+                if ui.button(s.find_next).clicked() {
                     actions.push(Action::FindStep(1));
                 }
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button("关闭").clicked() {
+                    if ui.button(s.find_close).clicked() {
                         actions.push(Action::CloseFind);
                     }
-                    ui.label(RichText::new("⌘G 下一个 · Esc 关闭").small().weak());
+                    ui.label(RichText::new(s.find_footer).small().weak());
                 });
             });
         });

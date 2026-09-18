@@ -3,6 +3,7 @@
 use egui::{Align, Layout, RichText, ScrollArea, Sense, Ui};
 
 use crate::app::{Action, App, Reveal};
+use crate::i18n::fill;
 use crate::markdown;
 
 /// 标题在侧栏里最多显示这么多字符，超出打省略号（完整文本放在悬停提示里）。
@@ -17,17 +18,18 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
         cursor_line,
         ..
     } = app;
+    let s = prefs.language.strings();
 
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
         .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("大纲").strong());
+                ui.label(RichText::new(s.outline_title).strong());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui
                         .small_button("✕")
-                        .on_hover_text("隐藏大纲（⌘⇧O）")
+                        .on_hover_text(s.outline_hide_hint)
                         .clicked()
                     {
                         prefs.show_outline = false;
@@ -43,15 +45,15 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
             ui.add_space(4.0);
 
             ScrollArea::vertical()
-                .id_salt("mdviewer.outline.scroll")
+                .id_salt("markview.outline.scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if headings.is_empty() {
                         ui.add_space(20.0);
                         ui.vertical_centered(|ui| {
-                            ui.label(RichText::new("还没有标题").weak());
+                            ui.label(RichText::new(s.outline_empty).weak());
                             ui.add_space(2.0);
-                            ui.label(RichText::new("用 # ## ### 起一行就有了").weak().small());
+                            ui.label(RichText::new(s.outline_empty_hint).weak().small());
                         });
                         return;
                     }
@@ -62,7 +64,7 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                         let active = *cursor_line == heading.line;
 
                         let label = if heading.text.is_empty() {
-                            "（空标题）".to_owned()
+                            s.outline_untitled.to_owned()
                         } else {
                             clip(&heading.text, MAX_TITLE_CHARS)
                         };
@@ -96,10 +98,12 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                                     char_end: at,
                                 });
                             }
-                            response.on_hover_text(format!(
-                                "第 {} 行\n{}",
-                                heading.line + 1,
-                                heading.text
+                            response.on_hover_text(fill(
+                                s.outline_tooltip,
+                                &[
+                                    ("line", &(heading.line + 1).to_string()),
+                                    ("text", &heading.text),
+                                ],
                             ));
                         });
                     }

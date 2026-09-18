@@ -1,24 +1,25 @@
 //! 原生 Markdown 编辑器 / 查看器。
 //!
 //! 用法：
-//!     mdviewer              打开空文档
-//!     mdviewer 笔记.md       直接打开指定文件
+//!     markview              打开空文档
+//!     markview 笔记.md       直接打开指定文件
 //!
 //! 打包成 macOS 应用（Dock 里才会有图标）：`packaging/build-app.sh`
 
 mod app;
 mod document;
 mod fonts;
+mod i18n;
 mod markdown;
 mod mermaid;
 mod prefs;
 mod ui;
 
-use app::{App, WINDOW_TITLE};
+use app::{APP_NAME, App};
 
 fn main() -> Result<(), eframe::Error> {
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title(WINDOW_TITLE)
+        .with_title(APP_NAME)
         .with_inner_size([1280.0, 840.0])
         .with_min_inner_size([760.0, 480.0])
         // 允许把 .md 文件直接拖进窗口打开
@@ -35,7 +36,7 @@ fn main() -> Result<(), eframe::Error> {
     pick_render_backend(&mut options);
 
     eframe::run_native(
-        WINDOW_TITLE,
+        APP_NAME,
         options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )

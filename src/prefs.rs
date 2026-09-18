@@ -1,11 +1,13 @@
 //! 用户偏好设置。整个结构体会被 serde 序列化进 eframe 的 storage
-//! （macOS 上是 `~/Library/Application Support/mdviewer/`），
+//! （macOS 上是 `~/Library/Application Support/markview/`），
 //! 所以**新增字段必须给它默认值**，否则老配置文件会反序列化失败。
 
 use std::path::{Path, PathBuf};
 
 use egui::Context;
 use serde::{Deserialize, Serialize};
+
+use crate::i18n::{Language, Strings};
 
 /// 最近文件列表最多保留多少条。
 const MAX_RECENT: usize = 12;
@@ -21,11 +23,11 @@ pub enum ViewMode {
 impl ViewMode {
     pub const ALL: [Self; 3] = [Self::Split, Self::Editor, Self::Preview];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self, s: &Strings) -> &'static str {
         match self {
-            Self::Split => "分栏",
-            Self::Editor => "编辑",
-            Self::Preview => "预览",
+            Self::Split => s.view_split,
+            Self::Editor => s.view_editor,
+            Self::Preview => s.view_preview,
         }
     }
 }
@@ -39,11 +41,11 @@ pub enum AppTheme {
 }
 
 impl AppTheme {
-    pub fn label(self) -> &'static str {
+    pub fn label(self, s: &Strings) -> &'static str {
         match self {
-            Self::System => "跟随系统",
-            Self::Light => "浅色",
-            Self::Dark => "深色",
+            Self::System => s.theme_system,
+            Self::Light => s.theme_light,
+            Self::Dark => s.theme_dark,
         }
     }
 
@@ -70,6 +72,8 @@ impl AppTheme {
 pub struct Preferences {
     pub view_mode: ViewMode,
     pub theme: AppTheme,
+    /// 界面语言。老配置文件里没有这个字段，会落到 `Language::default()`。
+    pub language: Language,
     pub show_outline: bool,
     pub show_line_numbers: bool,
     /// 编辑器是否自动换行。关闭后长行改为横向滚动。
@@ -92,6 +96,7 @@ impl Default for Preferences {
         Self {
             view_mode: ViewMode::Split,
             theme: AppTheme::System,
+            language: Language::default(),
             show_outline: true,
             show_line_numbers: true,
             editor_wrap: true,
@@ -115,7 +120,7 @@ impl Preferences {
         self.recent.insert(0, path.to_path_buf());
         self.recent.truncate(MAX_RECENT);
 
-        // 注意：相对路径（比如 `mdviewer foo.md`）的 parent() 是空路径而不是 None，
+        // 注意：相对路径（比如 `markview foo.md`）的 parent() 是空路径而不是 None，
         // 直接存进去会让下次的"打开"对话框落在奇怪的地方。
         if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
             self.last_dir = Some(dir.to_path_buf());

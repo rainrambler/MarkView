@@ -1,180 +1,229 @@
-# Markdown 查看器
+# MarkView
 
-一个用 Rust 写的原生 Markdown 编辑器 / 查看器：**左边写源码，右边实时渲染**。
+**English** · [简体中文](README.zh-CN.md)
 
-零外部运行时依赖，编译出来就是一个可直接双击运行的二进制。
+A native Markdown editor and viewer written in Rust: **source on the left, live preview on the
+right**. No Node, no browser, no embedded webview — it builds into a single binary you can
+double-click.
+
+![MarkView showing a Markdown document split into an editor and a live preview](assets/screenshots/app.png)
 
 ```bash
-cargo run                     # 打开空白文档
-cargo run -- 笔记.md           # 直接打开指定文件（也支持把文件拖进窗口）
+cargo run                        # open a blank document
+cargo run -- notes.md            # open a file (or just drag one into the window)
 ```
 
-## 界面
+## Features
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│ 文件  编辑  视图  帮助                                    ● 未保存 │
-├──────────┬───────────────────────────┬───────────────────────┤
-│ 大纲      │ 1  # 标题                 │  标题                 │
-│  H1 标题  │ 2                          │                       │
-│  H2 小节  │ 3  正文 **加粗**          │  正文 加粗            │
-│  H3 细节  │ 4                          │                       │
-├──────────┴───────────────────────────┴───────────────────────┤
-│ 笔记.md │ 3:12 │ 37 行 213 词 446 字符 │ LF │ 分栏 编辑 预览 │
-└──────────────────────────────────────────────────────────────┘
-```
+**Editing**
+- Line-number gutter. Soft-wrapped continuation lines are not numbered, so numbers stay aligned
+  no matter how long a line gets.
+- Markdown syntax highlighting that follows the light/dark theme.
+- An accent bar in the gutter marks the current line.
+- Undo / redo (⌘Z / ⌘⇧Z).
+- One-shot formatting: bold, italic, strikethrough, inline code, link, list, blockquote, headings.
+- Find bar (⌘F) with a live match count and ⌘G / ⌘⇧G to step through matches.
 
-## 功能
+**Preview**
+- Full GFM: tables, strikethrough, task lists, footnotes, alerts.
+- Syntax-highlighted code blocks (syntect); inline and local images both render.
+- **Mermaid diagrams are drawn for real** — parsed, laid out and rasterised in pure Rust, with no
+  Node or browser involved. If the syntax is broken, the block falls back to showing its source.
+- **Task-list checkboxes in the preview are clickable**, and the change is written back to the
+  source text.
 
-**编辑**
-- 行号槽（软换行的续行不编号，长行换行后行号依然对齐）
-- Markdown 语法高亮，主题跟随深浅色
-- 当前行左侧有强调竖条
-- 撤销 / 重做（⌘Z / ⌘⇧Z）
-- 一键格式化：加粗、斜体、删除线、行内代码、链接、列表、引用、标题
-- 查找栏：⌘F，实时匹配计数，⌘G / ⌘⇧G 上下跳转
+**Files**
+- Native file dialogs (rfd).
+- CRLF / LF and the UTF-8 BOM are preserved exactly on save, so you never pollute a git diff.
+- Export to HTML: a self-contained file with its own stylesheet that follows the system
+  light/dark setting and prints cleanly.
+- Recent-files list, drag and drop, and `markview notes.md` on the command line.
+- Unsaved changes are caught before the window closes or another file is opened.
 
-**预览**
-- GFM 全量支持：表格、删除线、任务列表、脚注、告警框
-- 代码块语法高亮（syntect），行内图片和本地图片都能显示
-- **Mermaid 流程图直接画出来**（纯 Rust 渲染，不需要 Node / 浏览器），语法错了退回显示源码
-- **预览里的任务列表复选框可以直接点**，改动会写回源文本
+**Interface**
+- Outline sidebar; clicking a heading jumps to that line (and `#` inside fenced code blocks is
+  correctly ignored).
+- Three layouts: editor only / split / preview only (⌘1 / ⌘2 / ⌘3).
+- Light and dark themes (follow the system, or force either), ⌘+ / ⌘- to zoom.
+- Window size, panel widths, preferences and recent files are all remembered.
+- **English and Simplified Chinese UI**, switchable at runtime from the *Language* menu.
 
-**文件**
-- 系统原生文件对话框（rfd）
-- 保存时原样保留 CRLF / LF 换行风格与 UTF-8 BOM，不污染 git diff
-- 导出为 HTML（自带样式，跟随系统深浅色，可直接打印）
-- 最近打开列表、拖放文件、`mdviewer 文件.md` 命令行传参
-- 未保存改动在关窗 / 换文件前会拦下来确认
+## Keyboard shortcuts
 
-**界面**
-- 大纲侧栏，点击跳转到对应行（会正确识别并跳过围栏代码块里的 `#`）
-- 三种布局：只看编辑 / 左右分栏 / 只看预览（⌘1 / ⌘2 / ⌘3）
-- 深浅色主题（跟随系统 / 浅色 / 深色），⌘+ / ⌘- 缩放
-- 窗口大小、面板宽度、偏好设置、最近文件都会记住
+On macOS these use ⌘; elsewhere `Command` maps to Ctrl.
 
-## 快捷键
-
-| 键 | 作用 |
+| Key | Action |
 | --- | --- |
-| ⌘N / ⌘O | 新建 / 打开 |
-| ⌘S / ⌘⇧S | 保存 / 另存为 |
-| ⌘E | 导出为 HTML |
-| ⌘1 / ⌘2 / ⌘3 | 只看编辑 / 左右分栏 / 只看预览 |
-| ⌘⇧O / ⌘⇧L | 大纲 / 行号 |
-| ⌘⇧T | 切换配色 |
-| ⌘+ / ⌘- / ⌘0 | 放大 / 缩小 / 重置 |
-| ⌘Z / ⌘⇧Z | 撤销 / 重做 |
-| ⌘B / ⌘I / ⌘⇧X | 加粗 / 斜体 / 删除线 |
-| ⌘K / ⌘⇧C | 链接 / 行内代码 |
-| ⌘⇧U / ⌘⇧P | 无序列表 / 引用 |
-| ⌘⌥1 / ⌘⌥2 / ⌘⌥3 | 一 / 二 / 三级标题 |
-| ⌘F | 查找 |
-| ⌘G / ⌘⇧G | 下一个 / 上一个匹配 |
+| ⌘N / ⌘O | New / Open |
+| ⌘S / ⌘⇧S | Save / Save As |
+| ⌘E | Export as HTML |
+| ⌘1 / ⌘2 / ⌘3 | Editor only / Split / Preview only |
+| ⌘⇧O / ⌘⇧L | Outline / Line numbers |
+| ⌘⇧T | Cycle theme |
+| ⌘+ / ⌘- / ⌘0 | Zoom in / out / reset |
+| ⌘Z / ⌘⇧Z | Undo / Redo |
+| ⌘B / ⌘I / ⌘⇧X | Bold / Italic / Strikethrough |
+| ⌘K / ⌘⇧C | Link / Inline code |
+| ⌘⇧U / ⌘⇧P | Bullet list / Blockquote |
+| ⌘⌥1 / ⌘⌥2 / ⌘⌥3 | Heading 1 / 2 / 3 |
+| ⌘F | Open the find bar |
+| ⌘G / ⌘⇧G | Next / previous match |
 
-## 代码结构
+## Building
+
+Rust **1.95 or newer** (the crate uses edition 2024).
+
+```bash
+git clone <this repo>
+cd markview
+cargo build --release
+./target/release/markview
+```
+
+Or install it into your `PATH`:
+
+```bash
+cargo install --path .
+```
+
+### macOS app bundle
+
+macOS ignores window-level icons — the Dock and Finder only read `CFBundleIconFile` from an
+`.app` bundle. To get the real icon, build the bundle:
+
+```bash
+packaging/build-app.sh          # -> dist/MarkView.app
+```
+
+## Project layout
 
 ```
 src/
-  main.rs          入口：窗口选项、拖放支持
-  app.rs           应用状态机：Action 队列、主循环、快捷键表
-  document.rs      文档模型：磁盘 I/O、CRLF/BOM 保真、脏标记
-  prefs.rs         偏好设置（serde 持久化到 eframe storage）
-  markdown.rs      纯逻辑：大纲提取、字数统计、HTML 导出
-  mermaid.rs       纯逻辑：按 mermaid 围栏切段、渲染与位图缓存
-  fonts.rs         中文字体加载
+  main.rs          Entry point: window options, drag-and-drop, render backend
+  app.rs           Application state machine: action queue, main loop, shortcut table
+  document.rs      Document model: disk I/O, CRLF/BOM fidelity, dirty flag
+  prefs.rs         Preferences (serde-persisted through eframe storage)
+  i18n.rs          UI string table (English / Simplified Chinese)
+  markdown.rs      Pure logic: outline extraction, word count, HTML export
+  mermaid.rs       Pure logic: split on mermaid fences, render, bitmap cache
+  fonts.rs         CJK font loading
   ui/
-    mod.rs         主题与样式
-    menu.rs        顶部菜单栏
-    editor.rs      编辑区：行号、语法高亮、查找栏、格式化操作
-    preview.rs     预览区
-    outline.rs     大纲侧栏
-    status.rs      底部状态栏
-    dialogs.rs     关于 / 快捷键 / 未保存确认
-    find.rs        查找状态与匹配逻辑
+    mod.rs         Theme and style tweaks
+    menu.rs        Top menu bar
+    editor.rs      Editor: gutter, highlighting, find bar, formatting actions
+    preview.rs     Preview pane
+    outline.rs     Outline sidebar
+    status.rs      Bottom status bar
+    dialogs.rs     About / shortcuts / unsaved-changes dialogs
+    find.rs        Find state and matching
+tests/fixtures/    Manual fixtures (see Testing)
 ```
 
-### 三个值得说明的设计
+### Three design notes
 
-**交互分两步走。** UI 代码只往一个 `Vec<Action>` 里塞"用户想干什么"，等所有面板画完之后再统一执行。
-这样菜单项和快捷键共用同一套处理逻辑，也不会在画 UI 的时候和借用检查器打架。
-`SaveAndProceed` 这类动作还会往队尾追加新动作，所以处理循环是可增长的。
+**Interaction is a two-step process.** UI code only pushes *what the user wants* into a
+`Vec<Action>`; everything is executed after all panels have been drawn. That way menu items and
+keyboard shortcuts share one implementation, and drawing the UI never fights the borrow checker.
+Actions such as `SaveAndProceed` append further actions to the end of the queue, so the dispatch
+loop is allowed to grow while it runs.
 
-**行号对齐靠 galley 而不是猜。** `TextEdit::show()` 会把排好版的 `Galley` 连同它在屏幕上的位置
-（`galley_pos`）一起返回，而 `Galley.rows` 里每一行都带 `pos`（相对偏移）和 `ends_with_newline`。
-于是"第 N 个逻辑行画在哪个 y"可以精确算出来 —— 即使某行因为太长被软换行成了好几个屏幕行，
-编号也只标在逻辑行首、**不会错位**。这个行为有单元测试钉住
-（`soft_wrapped_continuation_does_not_start_a_new_line`）。
+**Line numbers are aligned from the galley, not from guesswork.** `TextEdit::show()` returns the
+laid-out `Galley` together with its on-screen position (`galley_pos`), and every row in
+`Galley.rows` carries a relative `pos` plus an `ends_with_newline` flag. So "which y does logical
+line N start at" can be computed exactly — even when a long line is soft-wrapped into several
+screen rows, the number is drawn only at the start of the logical line and **never drifts**. A
+unit test pins this down (`soft_wrapped_continuation_does_not_start_a_new_line`).
 
-**Mermaid 只能靠自己切段。** `egui_commonmark` 没给"自定义代码块渲染"留钩子
-（只开放了行内 HTML 和公式两个回调），围栏代码块一律走语法高亮。所以预览遇到 ```mermaid 时
-把正文按围栏切成若干段：Markdown 段仍交给它，Mermaid 段由 `merman`（纯 Rust，
-不需要 Node / 浏览器 / 子进程）渲染成位图贴上去。切段是有代价的 —— 隔着围栏的语法
-（比如脚注引用和脚注定义被分到两段）不会互相解析，所以只有真的出现 mermaid 围栏时才走这条路。
+**Mermaid has to be split out by hand.** `egui_commonmark` offers no hook for custom code-block
+rendering (only inline HTML and math callbacks), so every fenced block goes through syntax
+highlighting. When the preview sees a `mermaid` fence it splits the document at the fences: Markdown
+segments still go to `egui_commonmark`, and Mermaid segments are rendered to a bitmap by
+`merman` — again pure Rust, no Node, browser or subprocess. Splitting has a cost: syntax that
+straddles a fence (a footnote reference separated from its definition, say) no longer resolves
+across segments, which is why the split only happens when a Mermaid fence is actually present.
 
-位图按 (源码, 深浅色, 缩放比, 底色) 缓存，只有改过的那一段会重算；而重算不便宜
-（debug 构建下小图一次约半秒，大头在解析、布局和 resvg 光栅化），所以改完还要再等
-250ms 才真去重画：打字期间先拿上一张图顶着，手停下来才换成新的。配色走 `merman` 的
-host theme，把 egui 的页面底色和深浅色喂进去 —— 默认管线会照搬 Mermaid 的行为往根节点写
-`background-color:white`，深色界面里那就是一块刺眼的白板（这个坑有单元测试钉住）。
+Bitmaps are cached by (source, light/dark, zoom factor, canvas colour) and only the segment that
+changed is recomputed. Recomputing is not cheap — roughly half a second for a small diagram in a
+debug build, dominated by parsing, layout and resvg rasterisation — so there is an extra 250 ms of
+settling time after the last keystroke: while you type, the previous bitmap stays on screen, and
+only once you stop does it get replaced. Colours come from `merman`'s host theme, fed with egui's
+page background and light/dark flag: the default pipeline copies Mermaid and writes
+`background-color:white` onto the root node, which is a glaring white slab on a dark UI (a unit
+test pins that down as well).
 
-## 测试
+## Testing
 
 ```bash
 cargo test
 ```
 
-- `ui/editor.rs`：在无头 `egui::Context` 里真的排一次版，验证软换行续行不编号、
-  行号 y 偏移严格递增、末尾换行多出一行、中文按字符而非字节计算行列
-- `ui/find.rs`：匹配查找、大小写不敏感、循环跳转、空查询
-- `mermaid.rs`：围栏切段（别的围栏里的 ```mermaid 不算数、没闭合的围栏、CRLF、
-  切完拼回去必须和原文逐字节一致）
+- `ui/editor.rs` — lays out text for real inside a headless `egui::Context` and checks that
+  soft-wrapped continuations are not numbered, that gutter y offsets strictly increase, that a
+  trailing newline yields an extra line, and that Chinese text is measured in characters rather
+  than bytes.
+- `ui/find.rs` — matching, case insensitivity, wrap-around stepping, empty queries.
+- `mermaid.rs` — fence splitting: a `mermaid` fence nested inside another fence does not count,
+  unterminated fences, CRLF, and the invariant that re-joining every segment reproduces the
+  source byte for byte.
+- `i18n.rs` — placeholder filling, English singular/plural selection, and a check that both
+  language tables stay in lockstep.
 
-## 依赖
+`tests/fixtures/linetest.md` is a manual fixture: each line carries its own number inside the
+text, so you can open it (`cargo run -- tests/fixtures/linetest.md`) and confirm that the gutter
+agrees with what the document says.
 
-| crate | 用途 |
+## Dependencies
+
+| Crate | Purpose |
 | --- | --- |
-| `eframe` / `egui` | 原生窗口与即时模式 UI（wgpu/Metal 渲染） |
-| `egui_commonmark` + `pulldown-cmark` | Markdown / GFM 渲染 |
-| `merman` | Mermaid 渲染（纯 Rust：解析 + 布局 + SVG + 光栅化） |
-| `egui_extras` | syntect 语法高亮、图片加载 |
-| `rfd` | 系统原生文件对话框 |
-| `skrifa` | 校验系统字体是否可解析（epaint 解析失败会直接 panic） |
+| `eframe` / `egui` | Native window and immediate-mode UI (wgpu / Metal) |
+| `egui_commonmark` + `pulldown-cmark` | Markdown / GFM rendering |
+| `merman` | Mermaid rendering (pure Rust: parse + layout + SVG + rasterise) |
+| `egui_extras` | syntect syntax highlighting, image loading |
+| `rfd` | Native file dialogs |
+| `skrifa` | Validating that system fonts parse (epaint panics if they do not) |
 
-## 关于中文字体
+## About CJK fonts
 
-egui 自带字体只有拉丁字形，中文会渲染成空白方块，所以启动时会挂一个系统中文字体做兜底。
-候选按 macOS → Linux → Windows 的常见路径排列，第一个能被 `skrifa` 解析的胜出；
-如果都没找到，程序照常运行（只是中文会显示成方块），不会崩。
+egui ships Latin glyphs only, so CJK text renders as empty boxes unless a system font is added as
+a fallback. At startup MarkView walks a list of common paths (macOS → Linux → Windows) and takes
+the first one that `skrifa` can parse. If none is found the app still runs — CJK text just shows
+as boxes — and never crashes.
 
-macOS 26 上实测命中 `/System/Library/Fonts/Hiragino Sans GB.ttc`
-（注意这台机器上**没有** `PingFang.ttc`，所以候选表里不能只写 PingFang）。
+Testing on macOS 26 hit `/System/Library/Fonts/Hiragino Sans GB.ttc`; note that this machine has
+**no** `PingFang.ttc`, which is why the candidate list cannot contain PingFang alone.
 
-## 开发用截图
+## Screenshots in development
 
-在没有"屏幕录制"权限的机器上也能验收渲染效果 —— egui 的截图走应用自己的帧缓冲，
-不依赖系统截屏：
+You can verify rendering on a machine without screen-recording permission — egui captures
+through the app's own framebuffer rather than the OS:
 
 ```bash
-MDVIEWER_SCREENSHOT=/tmp/shot.png cargo run -- demo.md
+MARKVIEW_SCREENSHOT=/tmp/shot.png cargo run -- demo.md
 ```
 
-程序会在界面稳定几帧后把窗口内容写成 PNG 然后自己退出。
+The app renders a few stable frames, writes the window contents to a PNG, and exits. Images
+decode asynchronously, so if the document embeds a large image, give it more frames with
+`MARKVIEW_SCREENSHOT_FRAMES=120`.
 
-## Windows 上的渲染后端
+## Render backend on Windows
 
-eframe 默认的 wgpu 后端在 Windows 上会把 **Vulkan** 也列进候选，而 wgpu 是按位顺序
-枚举适配器的（Vulkan 排在 DX12 前面），于是很容易选中 Intel 核显的 Vulkan 驱动。
-部分版本的 `igvk64.dll` 在建立 surface / swapchain 时会踩空指针，进程直接以
-`0xc0000005 STATUS_ACCESS_VIOLATION` 退出 —— 崩在驱动 DLL 里，Rust 侧连 panic
-都不会触发，日志里只有一个毫无信息量的退出码。
+eframe's default wgpu backend also offers **Vulkan** on Windows, and wgpu enumerates adapters in
+bit order with Vulkan first, so it readily picks the Intel iGPU's Vulkan driver. On some driver
+versions `igvk64.dll` dereferences a null pointer while creating the surface / swapchain and the
+process dies with `0xc0000005 STATUS_ACCESS_VIOLATION` — inside a C-level graphics driver, so
+Rust's panic hook never runs and all you get is a meaningless exit code.
 
-所以 `main.rs` 的 `pick_render_backend()` 在 Windows 上把后端固定成 **DX12**，
-不参与这个抽奖。想手动指定后端时照旧可以覆盖：
+So `pick_render_backend()` in `main.rs` pins the backend to **DX12** on Windows and stays out of
+that lottery. You can still override it by hand:
 
 ```powershell
-$env:WGPU_BACKEND="gl"; .\markview.exe      # 或者 dx12 / vulkan
+$env:WGPU_BACKEND="gl"; .\markview.exe      # or dx12 / vulkan
 ```
 
-排查这类崩溃可以先看 Windows 事件查看器里的 "应用程序错误"，
-"出错模块名称" 直接指出是哪个 DLL 崩的（本例是 `igvk64.dll`）。
+When diagnosing this kind of crash, Windows Event Viewer → "Application Error" names the faulty
+module directly (in this case `igvk64.dll`).
+
+## License
+
+[MIT](LICENSE).
