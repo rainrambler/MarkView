@@ -1,0 +1,48 @@
+[package]
+name = "markview"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "原生 Markdown 编辑器，带实时预览"
+license = "MIT"
+
+[dependencies]
+# 窗口 + 渲染（wgpu/DX12 后端），persistence 用于记住窗口与偏好设置
+# 显式写上 wgpu：main.rs 里的 pick_render_backend 要用 eframe::wgpu / eframe::egui_wgpu，
+# 不能再依赖"默认特性里恰好有它"
+eframe = { version = "0.36", features = ["persistence", "wgpu"] }
+egui = "0.36"
+
+# syntect -> 编辑器与预览里代码块的语法高亮
+# file/image -> 预览里能显示本地图片
+egui_extras = { version = "0.36", features = ["syntect", "file", "image"] }
+
+# Markdown 渲染（GFM：表格、删除线、任务列表、脚注、告警框）
+egui_commonmark = { version = "0.25", features = [
+    "better_syntax_highlighting",
+    "embedded_image",
+] }
+
+# egui_extras 的 image 特性要求由使用方打开具体图片格式
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "webp",
+    "bmp",
+] }
+
+# Mermaid 渲染：纯 Rust 的解析 + 布局 + SVG + 光栅化，不需要 Node / 浏览器 / 外部进程。
+# 默认特性是空的，`raster`（PNG，隐含 `render`）必须显式打开。
+merman = { version = "0.7", default-features = false, features = ["raster"] }
+
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+rfd = "0.17"
+serde = { version = "1", features = ["derive"] }
+# 只用它来校验系统字体是否可解析（epaint 0.36 内部同样使用 skrifa）
+skrifa = "0.44"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
