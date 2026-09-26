@@ -1,3 +1,28 @@
+// Windows 上不要那个多余的控制台窗口。
+//
+// Rust 默认按 `CONSOLE` 子系统链接（PE 头里的 Subsystem 字段 = 3）。双击 exe 或从
+// 资源管理器 / 快捷方式启动时，Windows 会先给进程分配一个控制台窗口，eframe 紧接着
+// 再开自己的 GUI 窗口 —— 于是就看到"两个窗口"，其中那个黑框从头到尾什么都没有，
+// 因为这是个纯 GUI 程序。改成 `WINDOWS` 子系统（Subsystem = 2）后系统只创建 GUI 窗口。
+//
+// 注意这是**链接期**的开关，只能在 crate 根用属性写，运行时改不了
+// （`ShowWindow(GetConsoleWindow(), SW_HIDE)` 那种做法要多一份 windows-sys 依赖，
+// 而且控制台窗口还会先闪一下）。
+//
+// 为什么 debug 也一起藏：不藏的话，直接双击 `target\debug\markview.exe` 依然是两个窗口。
+//
+// 代价（实测，都在 Windows / pwsh 上跑过）：
+// - 进程的标准句柄仍然从父进程继承，日志本身没丢 —— `Start-Process -Wait
+//   -RedirectStandardError out.txt` 能拿到 `[markview] screenshot written to ...`，
+//   截图钩子的 PNG 也照常写出来。
+// - 但 PowerShell / cmd 对 GUI 子系统的进程**不等它退出**就返回（实测 `& exe` 立刻
+//   返回 exit=0，进程 30 秒后才自己结束），所以 `2>` 这类重定向会提前收摊，那一行日志
+//   常常看不到。想要稳定的日志就先开个终端，或者显式重定向到文件。
+// - `cargo run` 不受影响：cargo 自己 wait 子进程，仍然会阻塞到窗口关闭。
+// 如果更看重 debug 下的日志、宁可双击 debug exe 时多一个窗口，把那行换成
+// `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` 即可。
+#![windows_subsystem = "windows"]
+
 //! 原生 Markdown 编辑器 / 查看器。
 //!
 //! 用法：
