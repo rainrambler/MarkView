@@ -64,7 +64,7 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                     let mut rebuilt = String::with_capacity(doc.text.len());
                     // Mermaid 块的序号：渲染缓存和防抖都按它排队
                     let mut block = 0usize;
-                    for segment in mermaid::split(&doc.text) {
+                    for (index, segment) in mermaid::split(&doc.text).into_iter().enumerate() {
                         match segment {
                             Segment::Markdown(src) => {
                                 // 纯空白段没有可渲染的东西，原样留下
@@ -74,7 +74,9 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                                 }
                                 // 段是借来的，渲染要可变借用，先拷一份出来
                                 let mut scratch = src.to_owned();
-                                viewer().show_mut(ui, cache, &mut scratch);
+                                show_segment(ui, index, |ui| {
+                                    viewer().show_mut(ui, cache, &mut scratch);
+                                });
                                 if scratch != src {
                                     changed = true;
                                 }
@@ -85,7 +87,9 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                                 if let Err(err) = mermaid.show(ui, block, source, content_width) {
                                     // 语法还没写对（打字到一半就是这种状态）：先按代码块显示，
                                     // 顺便把原因摆出来，别让这块地方凭空消失
-                                    viewer().show_mut(ui, cache, &mut raw.to_owned());
+                                    show_segment(ui, index, |ui| {
+                                        viewer().show_mut(ui, cache, &mut raw.to_owned());
+                                    });
                                     ui.colored_label(
                                         ui.visuals().warn_fg_color,
                                         fill(
@@ -109,6 +113,25 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
         // 复选框被点 -> 源文本真的变了，走正常的"已修改"流程
         app.touch();
     }
+}
+
+/// 渲染一段 Markdown，并把它的持久化 id 和前后的段隔开。
+///
+/// 有 Mermaid 的文档是按围栏切成若干段、逐段交给 `egui_commonmark` 的，
+/// 而每一段都会新建一个 `CommonMarkViewer` —— 它内部给表格起的 id 是
+/// `ui.make_persistent_id(("_table", 序号))`，序号**每段都从 0 重新数**
+/// （`CommonMarkViewerInternal::new()` 里 `curr_table: 0`）。
+///
+/// 段与段之间共用同一个 `ui`，于是「第一段的第 1 张表」和「第二段的第 1 张表」
+/// 算出的是同一个 id：egui 把 Grid 的列宽、表格外层横向 `ScrollArea` 的偏移都存在
+/// 这个 id 下面，**后一张表直接套用了前一张表的列宽**。列宽比内容窄、文字又不换行，
+/// 前一格的文字就压到后一格里去了（egui 的 debug 构建还会打
+/// "First/Second use of Grid ID ..."）。
+///
+/// 每段套一个独立的 `ui` id（`push_id`）之后，段内的编号再怎么重复也不会共用状态。
+fn show_segment<R>(ui: &mut Ui, index: usize, render: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.push_id(("markview.preview.segment", index), render)
+        .inner
 }
 
 /// 给预览里的相对图片路径拼一个 `file://` 基地址。
@@ -156,6 +179,94 @@ fn file_url_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 把一帧里所有的文字图元连同它们的矩形收集出来（`Shape::Text` 才是真正画出去的字）。
+    fn text_rects(shapes: &[egui::epaint::ClippedShape]) -> Vec<(egui::Rect, String)> {
+        fn walk(shape: &egui::epaint::Shape, out: &mut Vec<(egui::Rect, String)>) {
+            match shape {
+                egui::epaint::Shape::Text(text) => out.push((
+                    egui::Rect::from_min_size(text.pos, text.galley.size()),
+                    text.galley.job.text.clone(),
+                )),
+                egui::epaint::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        walk(shape, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut out = Vec::new();
+        for clipped in shapes {
+            walk(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    /// 找某个文字图元，返回它的矩形。
+    fn rect_of(rects: &[(egui::Rect, String)], needle: &str) -> egui::Rect {
+        rects
+            .iter()
+            .find(|(_, text)| text.contains(needle))
+            .unwrap_or_else(|| panic!("没有找到 {needle:?} 的文字图元"))
+            .0
+    }
+
+    /// 无头跑几帧，让 Grid 的列宽稳定下来，返回最后一帧的所有文字图元。
+    fn render_segments(segments: &[&str]) -> Vec<(egui::Rect, String)> {
+        let ctx = egui::Context::default();
+        let mut cache = egui_commonmark::CommonMarkCache::default();
+        let mut last = Vec::new();
+
+        for _ in 0..4 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_max_width(600.0);
+                for (index, src) in segments.iter().enumerate() {
+                    let mut scratch = (*src).to_owned();
+                    show_segment(ui, index, |ui| {
+                        egui_commonmark::CommonMarkViewer::new()
+                            .default_width(Some(500))
+                            .max_image_width(Some(500))
+                            .show_mut(ui, &mut cache, &mut scratch);
+                    });
+                }
+            });
+            // 不放掉纹理增量的话，epaint 的 debug 断言会在 drop 时 panic
+            output.textures_delta.clear();
+            last = text_rects(&output.shapes);
+        }
+
+        last
+    }
+
+    #[test]
+    fn segments_do_not_share_table_column_widths() {
+        // 第一段是一张窄表，第二段有一格超长文字。
+        // 两段的表格编号都从 0 开始，共用一个 ui 时 Grid 的 id 会撞上：
+        // 后一张表套用前一张的窄列宽，文字就压到下一格里（见 `show_segment`）。
+        let narrow = "| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+        let wide = "| this_is_a_long_cell_name | 值 |\n\
+                    | --- | --- |\n\
+                    | very_long_environment_variable_name_for_testing | ok |\n";
+
+        let rects = render_segments(&[narrow, wide]);
+
+        // 表头行与数据行各查一遍：右边那格必须排在前一格文字的后面
+        for (left, right) in [
+            ("this_is_a_long_cell_name", "值"),
+            ("very_long_environment_variable_name_for_testing", "ok"),
+        ] {
+            let left = rect_of(&rects, left);
+            let right = rect_of(&rects, right);
+            assert!(
+                right.min.x >= left.max.x - 0.5,
+                "{left:?} 的右边界 {:?} 越过了 {right:?} 的左边界 {:?}",
+                left.max.x,
+                right.min.x
+            );
+        }
+    }
 
     #[test]
     fn windows_drive_paths_keep_the_drive_out_of_the_host_slot() {
