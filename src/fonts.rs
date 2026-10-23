@@ -4,7 +4,6 @@
 //! 做 fallback。epaint 在字库解析失败时是直接 `panic!` 的（见 epaint/src/text/fonts.rs），
 //! 因此这里先用 skrifa（epaint 内部用的同一个解析器）**试解析**，确认可用才交给 egui。
 
-use std::borrow::Cow;
 use std::sync::Arc;
 
 /// 候选字体路径，按优先级排列。跨平台的常见位置都列上，第一个能解析的胜出。
@@ -44,7 +43,7 @@ pub fn install(ctx: &egui::Context) -> Option<&'static str> {
     defs.font_data.insert(
         NAME.to_owned(),
         Arc::new(egui::FontData {
-            font: Cow::Owned(found.bytes),
+            font: Arc::new(found.bytes),
             index: found.face_index,
             tweak,
         }),
@@ -121,7 +120,7 @@ fn baseline_offset_factor(defs: &egui::FontDefinitions, found: &FoundFont) -> f3
             .get(&family)
             .and_then(|names| names.first())
             .and_then(|name| defs.font_data.get(name))
-            .and_then(|data| em_metrics(&data.font, data.index));
+            .and_then(|data| em_metrics(data.bytes(), data.index));
         if let Some(primary) = primary {
             sum += primary.ascent - (cjk.ascent + 0.5 * (primary.row_height - cjk.row_height));
             count += 1;

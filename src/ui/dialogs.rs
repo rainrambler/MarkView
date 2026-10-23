@@ -35,7 +35,7 @@ pub fn show(app: &mut App, ctx: &Context, actions: &mut Vec<Action>) {
 /// `Modal::show` 返回是否应该关闭（点背景、按 Esc、或点了关闭按钮）。
 fn about(app: &mut App, ctx: &Context) -> bool {
     let s = app.prefs.language.strings();
-    let response = Modal::new(egui::Id::new("markview.dialog.about")).show(ctx, |ui| {
+    let response = Modal::new(egui::Id::unique("markview.dialog.about")).show(ctx, |ui| {
         ui.set_max_width(470.0);
         ui.heading(s.app_name);
         ui.add_space(2.0);
@@ -75,7 +75,7 @@ fn about(app: &mut App, ctx: &Context) -> bool {
 fn shortcuts(app: &App, ctx: &Context) -> bool {
     let s = app.prefs.language.strings();
 
-    let response = Modal::new(egui::Id::new("markview.dialog.shortcuts")).show(ctx, |ui| {
+    let response = Modal::new(egui::Id::unique("markview.dialog.shortcuts")).show(ctx, |ui| {
         ui.set_max_width(430.0);
         ui.heading(s.shortcuts_title);
         ui.add_space(10.0);
@@ -115,7 +115,7 @@ fn discard(app: &mut App, ctx: &Context, then: &AfterDiscard) -> Choice {
     let s = app.prefs.language.strings();
     let mut choice = Choice::None;
 
-    let response = Modal::new(egui::Id::new("markview.dialog.discard")).show(ctx, |ui| {
+    let response = Modal::new(egui::Id::unique("markview.dialog.discard")).show(ctx, |ui| {
         ui.set_max_width(430.0);
         ui.heading(s.discard_title);
         ui.add_space(8.0);

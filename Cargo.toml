@@ -16,15 +16,15 @@ homepage = "https://github.com/rainrambler/markview"
 # 窗口 + 渲染（wgpu/DX12 后端），persistence 用于记住窗口与偏好设置
 # 显式写上 wgpu：main.rs 里的 pick_render_backend 要用 eframe::wgpu / eframe::egui_wgpu，
 # 不能再依赖"默认特性里恰好有它"
-eframe = { version = "0.36", features = ["persistence", "wgpu"] }
-egui = "0.36"
+eframe = { version = "0.37", features = ["persistence", "wgpu"] }
+egui = "0.37"
 
 # syntect -> 编辑器与预览里代码块的语法高亮
 # file/image -> 预览里能显示本地图片
-egui_extras = { version = "0.36", features = ["syntect", "file", "image"] }
+egui_extras = { version = "0.37", features = ["syntect", "file", "image"] }
 
 # Markdown 渲染（GFM：表格、删除线、任务列表、脚注、告警框）
-egui_commonmark = { version = "0.25", features = [
+egui_commonmark = { version = "0.26", features = [
     "better_syntax_highlighting",
     "embedded_image",
 ] }
@@ -45,7 +45,7 @@ merman = { version = "0.7", default-features = false, features = ["raster"] }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 rfd = "0.17"
 serde = { version = "1", features = ["derive"] }
-# 校验系统字体是否可解析、读取字体度量以对齐中英文基线（epaint 0.36 内部同样使用 skrifa）
+# 校验系统字体是否可解析、读取字体度量以对齐中英文基线（epaint 0.37 内部同样使用 skrifa）
 skrifa = "0.44"
 
 [build-dependencies]

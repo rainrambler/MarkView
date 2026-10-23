@@ -275,7 +275,7 @@ fn find_bar(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
 
                 let response = ui.add(
                     TextEdit::singleline(&mut find.query)
-                        .id(egui::Id::new("markview.find.query"))
+                        .id(egui::Id::unique("markview.find.query"))
                         .hint_text(s.find_hint)
                         .desired_width(180.0)
                         .font(TextStyle::Monospace),

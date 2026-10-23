@@ -5,6 +5,7 @@
 //! 而且不会在画 UI 的时候和借用检查器打架。
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use egui::{Context, Key, KeyboardShortcut, Modifiers, ViewportCommand};
@@ -31,7 +32,7 @@ const PREFS_KEY: &str = "markview.preferences.v1";
 
 /// 编辑区 TextEdit 的稳定 Id。查找跳转、加粗等操作都要靠它读写光标状态。
 pub fn editor_id() -> egui::Id {
-    egui::Id::new("markview.editor.text")
+    egui::Id::unique("markview.editor.text")
 }
 
 /// 一个待跳转的位置，字符序号（不是字节）。
@@ -144,6 +145,8 @@ struct ScreenshotJob {
     /// 还要再等几帧，让 Markdown 缓存、图片加载都稳定下来。
     frames_left: u32,
     requested: bool,
+    /// 截图由 egui 的异步回调送来，主循环下一帧从这里取。
+    captured: Option<std::sync::mpsc::Receiver<Arc<egui::ColorImage>>>,
 }
 
 /// 截图钩子写到哪里去，从环境变量读。两个名字都认：新名字优先，
@@ -251,6 +254,7 @@ impl App {
                 path,
                 frames_left: screenshot_frames(),
                 requested: false,
+                captured: None,
             }),
         };
         app.rebuild_derived();
@@ -657,7 +661,7 @@ impl App {
             ToastKind::Error => visuals.error_fg_color,
         };
 
-        egui::Area::new(egui::Id::new("markview.toast"))
+        egui::Area::new(egui::Id::unique("markview.toast"))
             .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -46.0))
             .order(egui::Order::Foreground)
             .interactable(false)
@@ -680,13 +684,12 @@ impl App {
             return;
         }
 
-        // 截图结果通过 input 事件在下一帧回来
-        let captured = ctx.input(|input| {
-            input.events.iter().find_map(|event| match event {
-                egui::Event::Screenshot { image, .. } => Some(image.clone()),
-                _ => None,
-            })
-        });
+        // 截图结果由 egui 的回调在下一帧前后送到这里
+        let captured = self
+            .screenshot
+            .as_ref()
+            .and_then(|job| job.captured.as_ref())
+            .and_then(|rx| rx.try_recv().ok());
 
         if let Some(image) = captured {
             if let Some(job) = self.screenshot.as_ref() {
@@ -718,7 +721,13 @@ impl App {
             ctx.request_repaint();
         } else if !job.requested {
             job.requested = true;
-            ctx.send_viewport_cmd(ViewportCommand::Screenshot(egui::UserData::default()));
+            let (tx, rx) = std::sync::mpsc::channel();
+            job.captured = Some(rx);
+            let ctx_for_cb: Context = (*ctx).clone();
+            ctx.request_screenshot(move |image| {
+                let _ = tx.send(image);
+                ctx_for_cb.request_repaint();
+            });
             ctx.request_repaint();
         }
     }
