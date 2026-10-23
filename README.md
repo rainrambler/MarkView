@@ -213,7 +213,7 @@ agrees with what the document says.
 | `merman` | Mermaid rendering (pure Rust: parse + layout + SVG + rasterise) |
 | `egui_extras` | syntect syntax highlighting, image loading |
 | `rfd` | Native file dialogs |
-| `skrifa` | Validating that system fonts parse (epaint panics if they do not) |
+| `skrifa` | Validating that system fonts parse and reading their metrics (epaint panics if they do not parse) |
 
 ## About CJK fonts
 
@@ -224,6 +224,13 @@ as boxes — and never crashes.
 
 Testing on macOS 26 hit `/System/Library/Fonts/Hiragino Sans GB.ttc`; note that this machine has
 **no** `PingFang.ttc`, which is why the candidate list cannot contain PingFang alone.
+
+CJK fonts usually have very different ascent and line height from egui's bundled Latin font
+(Hiragino Sans GB is 1.5 em tall, Ubuntu Light only 1.15 em). epaint derives a fallback glyph's
+baseline as "its own ascent + half the line-height difference", which leaves Chinese sitting a few
+pixels above English and digits on the same line. `fonts.rs` reads both fonts' metrics and uses
+`FontTweak::y_offset_factor` to shift the CJK glyphs back onto the shared baseline; the value is
+recomputed for whatever font the machine actually has.
 
 ## Screenshots in development
 

@@ -207,7 +207,7 @@ cargo test
 | `merman` | Mermaid 渲染（纯 Rust：解析 + 布局 + SVG + 光栅化） |
 | `egui_extras` | syntect 语法高亮、图片加载 |
 | `rfd` | 系统原生文件对话框 |
-| `skrifa` | 校验系统字体是否可解析（epaint 解析失败会直接 panic） |
+| `skrifa` | 校验系统字体是否可解析、读取字体度量（epaint 解析失败会直接 panic） |
 
 ## 关于中文字体
 
@@ -217,6 +217,11 @@ egui 自带字体只有拉丁字形，中文会渲染成空白方块，所以启
 
 macOS 26 上实测命中 `/System/Library/Fonts/Hiragino Sans GB.ttc`
 （注意这台机器上**没有** `PingFang.ttc`，所以候选表里不能只写 PingFang）。
+
+中文字体的 ascent 和行高通常和 egui 自带的拉丁字体差得很远（Hiragino Sans GB 行高 1.5em，
+Ubuntu Light 只有 1.15em），而 epaint 混排时是"本字体 ascent + 行高差的一半"来定位基线的，
+结果就是同一行里中文比英文、数字高出一截。`fonts.rs` 会读出两个字体的度量，用
+`FontTweak::y_offset_factor` 把中文字形整体平移相应距离；换机器、换中文字体都会重新计算。
 
 ## 开发用截图
 
