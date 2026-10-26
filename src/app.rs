@@ -440,7 +440,8 @@ impl App {
             return;
         };
 
-        let html = markdown::to_html(&self.doc.text, &stem, s.html_lang);
+        // 导出跟着预览的公式开关走：关掉的人多半是想让 `$` 留在文字里
+        let html = markdown::to_html(&self.doc.text, &stem, s.html_lang, self.prefs.render_math);
         match std::fs::write(&path, html.as_bytes()) {
             Ok(()) => {
                 if let Some(dir) = path.parent() {

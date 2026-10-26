@@ -22,6 +22,7 @@ use ratex_layout::{LayoutOptions, layout, to_display_list};
 use ratex_parser::parser::parse;
 use ratex_svg::{SvgOptions, render_to_svg};
 use ratex_types::color::Color;
+use ratex_types::display_item::DisplayList;
 use ratex_types::math_style::MathStyle;
 
 /// 缓存里最多留几张贴图。公式比 Mermaid 多得多，给大一点；
@@ -218,6 +219,95 @@ fn inline_placement(metrics: Metrics, em: f32, ascent: f32, row_height: f32) -> 
     (height, baseline - above)
 }
 
+/// 导出 HTML 时，一个 em 折成多少 SVG 用户单位。
+///
+/// 只影响坐标精度：尺寸最后是以 em 写在 `width`/`height` 上的，
+/// 于是公式会跟着正文字号和浏览器缩放一起变，打印也还是矢量。
+const EXPORT_EM: f64 = 16.0;
+
+/// 把公式渲染成一段能直接塞进 HTML 的内联 SVG。
+///
+/// 返回 `None` 表示排不出来（语法错误、太大），调用方应该退回显示源码。
+///
+/// 颜色用 `currentColor`：导出的页面本身跟随 `prefers-color-scheme`，
+/// 公式跟着文字颜色走就不用为深色主题再存一份。公式里显式写了 `\color{...}`
+/// 的部分不受影响 —— 只把基准色换掉。
+pub fn to_html(tex: &str, display: bool) -> Option<String> {
+    let tex = tex.trim();
+    if tex.is_empty() || tex.len() > MAX_SOURCE {
+        return None;
+    }
+
+    let list = typeset(tex, display, Color::BLACK).ok()?;
+    let svg = render_to_svg(
+        &list,
+        &SvgOptions {
+            font_size: EXPORT_EM,
+            padding: 0.0,
+            embed_glyphs: true,
+            ..Default::default()
+        },
+    );
+    let svg = svg.replace("rgba(0,0,0,1)", "currentColor");
+
+    // 行内公式要压在文字基线上，做法和 KaTeX 的输出一样：往下挪一个 depth
+    let size = format!(
+        r#" width="{}em" height="{}em""#,
+        em(list.width as f32),
+        em(list.total_height() as f32)
+    );
+    // 没有深度（公式都落在基线以上）就不用写这个 style
+    let size = if display || list.depth <= 0.001 {
+        size
+    } else {
+        format!(
+            r#"{size} style="vertical-align:-{}em""#,
+            em(list.depth as f32)
+        )
+    };
+    let svg = resize_root(&svg, &size)?;
+
+    let class = if display {
+        "math math-display"
+    } else {
+        "math math-inline"
+    };
+    // 屏读器读不出 SVG 里的字形，把 TeX 源码挂在 aria-label 上：至少能听出个大概
+    Some(format!(
+        r#"<span class="{class}" role="img" aria-label="{}">{svg}</span>"#,
+        escape_attribute(tex)
+    ))
+}
+
+/// 用 `attrs` 替换 `<svg>` 开标签上原本的 `width`/`height`（ratex-svg 写的是 pt）。
+///
+/// 拿不到预期结构就返回 `None`：调用方退回源码，总比输出一段坏掉的 SVG 强。
+fn resize_root(svg: &str, attrs: &str) -> Option<String> {
+    let head_end = svg.find('>')?;
+    let (head, rest) = svg.split_at(head_end);
+    let cut = head.find(" width=")?;
+    Some(format!("{}{attrs}{rest}", &head[..cut]))
+}
+
+/// 把 TeX 源码放进 HTML 属性里（标签、引号、& 都要转义）。
+fn escape_attribute(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// em 数量写进 HTML 属性：三位小数够用了（16px 字号下 0.001em ≈ 0.016px）。
+fn em(value: f32) -> String {
+    let text = format!("{value:.3}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text.is_empty() || text == "-" {
+        "0".to_owned()
+    } else {
+        text.to_owned()
+    }
+}
+
 /// 公式画不出来（或者太长）时，原样把源码摆出来。
 fn show_source(ui: &mut Ui, tex: &str, display: bool) {
     let source = if display {
@@ -265,13 +355,8 @@ fn ratex_color(color: Color32) -> Color {
     )
 }
 
-/// 排版 + 光栅化。`em_px` 是一个字号有多少物理像素。
-fn render(
-    tex: &str,
-    display: bool,
-    color: Color,
-    em_px: f32,
-) -> Result<(ColorImage, Metrics), String> {
+/// 解析 + 排版，得到一条画图指令列表（长度单位都是 em）。
+fn typeset(tex: &str, display: bool, color: Color) -> Result<DisplayList, String> {
     let nodes = parse(tex).map_err(|err| format!("{err:?}"))?;
     let options = LayoutOptions {
         style: if display {
@@ -286,6 +371,17 @@ fn render(
     if list.width <= 0.0 || list.total_height() <= 0.0 {
         return Err("公式是空的".to_owned());
     }
+    Ok(list)
+}
+
+/// 排版 + 光栅化。`em_px` 是一个字号有多少物理像素。
+fn render(
+    tex: &str,
+    display: bool,
+    color: Color,
+    em_px: f32,
+) -> Result<(ColorImage, Metrics), String> {
+    let list = typeset(tex, display, color)?;
 
     let svg = render_to_svg(
         &list,

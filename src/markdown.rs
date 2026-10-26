@@ -1,6 +1,8 @@
 //! 从 Markdown 源文本派生出来的东西：大纲、字数统计、HTML 导出。
 //! 这些都只依赖 `text`，不碰 UI，方便单独测试。
 
+use crate::math;
+
 /// 一条标题。`line` 是 0 基的行号，点击大纲时用它跳转。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Heading {
@@ -194,8 +196,12 @@ pub fn line_char_offset(text: &str, line: usize) -> usize {
 ///
 /// `lang` 写进 `<html lang="...">`，跟着界面语言走 —— 它会影响浏览器的
 /// 断行规则、拼写检查和屏幕阅读器的发音。
-pub fn to_html(text: &str, title: &str, lang: &str) -> String {
-    use pulldown_cmark::{Options, Parser, html};
+///
+/// `render_math` 为真时把 `$...$` / `$$...$$` 烘成内联 SVG：导出文件依然自包含，
+/// 不挂 KaTeX、不跑 JS、不需要联网，缩放和打印都是矢量的。关掉则 `$` 原样留在文字里
+/// —— 和预览区的「数学公式」开关是同一个意思。
+pub fn to_html(text: &str, title: &str, lang: &str, render_math: bool) -> String {
+    use pulldown_cmark::{Event, Options, Parser, html};
 
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);
@@ -203,9 +209,19 @@ pub fn to_html(text: &str, title: &str, lang: &str) -> String {
     opts.insert(Options::ENABLE_TASKLISTS);
     opts.insert(Options::ENABLE_FOOTNOTES);
     opts.insert(Options::ENABLE_SMART_PUNCTUATION);
+    if render_math {
+        opts.insert(Options::ENABLE_MATH);
+    }
 
     let mut body = String::with_capacity(text.len() * 3 / 2);
-    html::push_html(&mut body, Parser::new_ext(text, opts));
+    html::push_html(
+        &mut body,
+        Parser::new_ext(text, opts).map(|event| match event {
+            Event::InlineMath(tex) => math_event(&tex, false),
+            Event::DisplayMath(tex) => math_event(&tex, true),
+            other => other,
+        }),
+    );
 
     format!(
         "<!doctype html>\n\
@@ -224,6 +240,21 @@ pub fn to_html(text: &str, title: &str, lang: &str) -> String {
         title = escape_html(title),
         css = EXPORT_CSS,
     )
+}
+
+/// 一条公式要变成什么东西：能排就换成 SVG，排不出来就把源码原样留在正文里。
+fn math_event(tex: &str, display: bool) -> pulldown_cmark::Event<'static> {
+    use pulldown_cmark::{CowStr, Event};
+
+    match math::to_html(tex, display) {
+        Some(svg) => Event::Html(CowStr::from(svg)),
+        // `Event::Text` 会被转义，源码里的 `<`、`&` 都不会变成标记
+        None => Event::Text(CowStr::from(if display {
+            format!("$${tex}$$")
+        } else {
+            format!("${tex}$")
+        })),
+    }
 }
 
 fn escape_html(s: &str) -> String {
@@ -281,7 +312,71 @@ th, td { border: 1px solid var(--border); padding: 6px 13px; }
 th { font-weight: 600; background: var(--code-bg); }
 tr:nth-child(2n) td { background: color-mix(in srgb, var(--code-bg) 50%, transparent); }
 img { max-width: 100%; height: auto; }
+/* 公式：字形已经是 path，颜色走 currentColor，所以深浅色都不用另存一份 */
+.math svg { display: inline-block; vertical-align: baseline; }
+.math-inline svg { margin: 0 .12em; }
+.math-display { display: block; margin: 1.2em 0; }
+.math-display svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
 del { color: var(--muted); }
 @media print { .markdown-body { max-width: none; padding: 0; } }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inline_math_is_baked_into_an_svg() {
+        let html = to_html("行内 $x^2$ 完", "t", "zh", true);
+        assert!(html.contains(r#"class="math math-inline""#), "{html}");
+        assert!(html.contains("<svg"), "公式没有变成 SVG");
+        assert!(
+            html.contains("currentColor"),
+            "颜色应该跟着页面的文字颜色走"
+        );
+        assert!(
+            html.contains(r#"aria-label="x^2""#),
+            "公式源码要挂在 aria-label 上给屏读器"
+        );
+        assert!(!html.contains("$x^2$"), "源码不该再出现在正文里");
+        assert!(html.contains("width=\""), "尺寸要写进 svg");
+    }
+
+    #[test]
+    fn inline_math_carries_its_baseline_offset() {
+        // 有深度（下标、分式）的公式要靠 vertical-align 压回文字基线上
+        let html = to_html("下标 $x_1$", "t", "zh", true);
+        assert!(html.contains(r#"style="vertical-align:-"#), "{html}");
+    }
+
+    #[test]
+    fn display_math_gets_its_own_centred_block() {
+        let html = to_html("$$\n\\frac{a}{b}\n$$", "t", "zh", true);
+        assert!(html.contains(r#"class="math math-display""#), "{html}");
+    }
+
+    #[test]
+    fn broken_math_keeps_its_source_text() {
+        let html = to_html("坏公式 $\\frac{1}{$ 结束了", "t", "zh", true);
+        assert!(!html.contains("<svg"), "坏公式不该输出 SVG");
+        assert!(html.contains("frac"), "源码要留在原地");
+    }
+
+    #[test]
+    fn math_can_be_left_as_plain_text() {
+        let html = to_html("公式 $x^2$ 与 $$y$$", "t", "zh", false);
+        assert!(!html.contains("<svg"), "关掉之后不该有 SVG");
+        assert!(html.contains("$x^2$"), "关掉之后源码应该原样留着");
+    }
+
+    #[test]
+    fn explicit_colours_in_math_survive() {
+        let html = to_html(r"$\color{red}{x}$", "t", "zh", true);
+        assert!(html.contains("<svg"), "{html}");
+        assert!(
+            html.contains("rgba(255,0,0,1)"),
+            "\\color{{red}} 不该被 currentColor 顶掉：{html}"
+        );
+    }
+}

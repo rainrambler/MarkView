@@ -39,8 +39,8 @@ cargo run -- notes.md            # open a file (or just drag one into the window
 - Native file dialogs (rfd).
 - CRLF / LF and the UTF-8 BOM are preserved exactly on save, so you never pollute a git diff.
 - Export to HTML: a self-contained file with its own stylesheet that follows the system
-  light/dark setting and prints cleanly. Math stays as `$...$` in the exported file (drop in
-  KaTeX or MathJax on the receiving site if you need it typeset there too).
+  light/dark setting and prints cleanly. Formulas are baked in as inline SVG — vector, themed
+  via `currentColor`, no KaTeX script and no network; the cost is a somewhat larger file.
 - Recent-files list, drag and drop, and `markview notes.md` on the command line.
 - Unsaved changes are caught before the window closes or another file is opened.
 
@@ -199,6 +199,13 @@ the darkest/lightest colour is baked into the raster rather than inverted afterw
 and zoom factor both come out right in a single pass. A single formula costs well under a
 millisecond in a release build, so there is no debounce here — only the edited formula is redrawn.
 
+The HTML export reuses the same typesetting step: each formula is emitted as an inline `<svg>` whose
+glyph outlines are already paths, sized in `em` so it tracks the font size and stays sharp when
+printed, with `vertical-align: -<depth>em` for inline spans (the same trick KaTeX's HTML output
+uses). The base paint colour becomes `currentColor`, so one file covers light and dark; a formula
+that explicitly asks for `\color{red}` keeps its own colour. The export honours the same
+*View → Math* switch as the preview.
+
 ## Testing
 
 ```bash
@@ -213,6 +220,9 @@ cargo test
 - `math.rs` — renders formulas for real in a headless `egui::Context`: inline math stays on the
   text line and in reading order, display math gets its own centred line, broken LaTeX falls back
   to its source, textures are reused on the next frame, and a dark theme produces light glyphs.
+- `markdown.rs` — HTML export turns math into inline SVG (with a baseline offset where the formula
+  has depth), keeps explicit `\color{...}` colours, leaves broken formulas as source text, and
+  leaves `$...$` alone when math is switched off.
 - `mermaid.rs` — fence splitting: a `mermaid` fence nested inside another fence does not count,
   unterminated fences, CRLF, and the invariant that re-joining every segment reproduces the
   source byte for byte.
