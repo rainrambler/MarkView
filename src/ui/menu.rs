@@ -168,6 +168,17 @@ pub fn show(app: &mut App, ui: &mut Ui, actions: &mut Vec<Action>) {
                 {
                     actions.push(Action::ToggleWrap);
                 }
+                if ui
+                    .add(
+                        egui::Button::new(s.item_math)
+                            .shortcut_text("")
+                            .selected(prefs.render_math),
+                    )
+                    .on_hover_text(s.item_math_hint)
+                    .clicked()
+                {
+                    actions.push(Action::ToggleMath);
+                }
                 ui.separator();
 
                 if ui

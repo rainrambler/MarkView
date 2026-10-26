@@ -14,6 +14,7 @@ use egui_commonmark::CommonMarkViewer;
 
 use crate::app::{Action, App};
 use crate::i18n::fill;
+use crate::math;
 use crate::mermaid::{self, Segment};
 
 /// 预览内容左右各留多少内边距，图片最大宽度据此计算。
@@ -25,6 +26,7 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
         cache,
         prefs,
         mermaid,
+        math,
         ..
     } = app;
 
@@ -33,6 +35,14 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
     let content_width = (ui.available_width() - PAD_X * 2.0).max(160.0);
     // 提前算好基地址：闭包里就只借用 prefs，下面才能同时可变借用 doc.text
     let base_uri = base_uri(doc.dir().as_deref());
+
+    // 公式回调要求 `'static`（`RenderMathFn` 是 `dyn Fn + 'static`），
+    // 所以闭包自己拎一份缓存句柄，而不是借用 `app.math`
+    let math = math.clone();
+    let render_math =
+        move |ui: &mut Ui, tex: &str, inline: bool| math::show(&math, ui, tex, !inline);
+    let render_math: Option<&egui_commonmark::RenderMathFn> =
+        prefs.render_math.then_some(&render_math);
 
     egui::Frame::new()
         .inner_margin(egui::Margin::symmetric(PAD_X as i8, 16))
@@ -50,6 +60,9 @@ pub fn show(app: &mut App, ui: &mut Ui, _actions: &mut Vec<Action>) {
                             .max_image_width(Some(content_width as usize))
                             .default_width(Some(content_width as usize))
                             .enable_scroll_to_heading(true)
+                            // `$...$` / `$$...$$` 交给 `crate::math` 画成贴图；
+                            // 关掉开关时传 None，公式就按纯文本留在原地
+                            .render_math_fn(render_math)
                     };
 
                     // 绝大多数文档没有 Mermaid：整篇渲染，任务列表的复选框能直接改回源文本

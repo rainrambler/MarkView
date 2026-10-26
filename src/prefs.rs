@@ -80,6 +80,8 @@ pub struct Preferences {
     pub editor_wrap: bool,
     /// 预览区是否显示行内 HTML 的原始文本（默认按纯文本渲染）。
     pub show_syntax_themes: bool,
+    /// 预览区是否把 `$...$` / `$$...$$` 渲染成公式。
+    pub render_math: bool,
     /// 界面缩放系数，1.0 为 100%。
     pub zoom: f32,
     /// 最近打开过的文件，最新的在前。
@@ -101,6 +103,7 @@ impl Default for Preferences {
             show_line_numbers: true,
             editor_wrap: true,
             show_syntax_themes: false,
+            render_math: true,
             zoom: 1.0,
             recent: Vec::new(),
             last_dir: None,

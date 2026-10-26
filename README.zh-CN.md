@@ -41,12 +41,15 @@ cargo run -- 笔记.md           # 直接打开指定文件（也支持把文件
 - GFM 全量支持：表格、删除线、任务列表、脚注、告警框
 - 代码块语法高亮（syntect），行内图片和本地图片都能显示
 - **Mermaid 流程图直接画出来**（纯 Rust 渲染，不需要 Node / 浏览器），语法错了退回显示源码
+- **LaTeX 公式**（行内 `$...$`、块级 `$$...$$`）由 RaTeX（KaTeX 的 Rust 移植）排版，
+  KaTeX 字体直接编进二进制；基线跟着正文走，深浅色主题都跟随，语法错了退回显示源码
 - **预览里的任务列表复选框可以直接点**，改动会写回源文本
 
 **文件**
 - 系统原生文件对话框（rfd）
 - 保存时原样保留 CRLF / LF 换行风格与 UTF-8 BOM，不污染 git diff
-- 导出为 HTML（自带样式，跟随系统深浅色，可直接打印）
+- 导出为 HTML（自带样式，跟随系统深浅色，可直接打印；公式在导出文件里仍是 `$...$` 源码，
+  需要浏览器端排版的话自己挂一份 KaTeX / MathJax 即可）
 - 最近打开列表、拖放文件、`markview 文件.md` 命令行传参
 - 未保存改动在关窗 / 换文件前会拦下来确认
 
@@ -145,6 +148,7 @@ src/
   i18n.rs          界面文案表（英文 / 简体中文）
   markdown.rs      纯逻辑：大纲提取、字数统计、HTML 导出
   mermaid.rs       纯逻辑：按 mermaid 围栏切段、渲染与位图缓存
+  math.rs          纯逻辑：LaTeX -> SVG（RaTeX）-> 贴图，公式缓存
   fonts.rs         中文字体加载
   ui/
     mod.rs         主题与样式
@@ -182,6 +186,15 @@ tests/fixtures/    手工验收用的样本文件（见「测试」）
 host theme，把 egui 的页面底色和深浅色喂进去 —— 默认管线会照搬 Mermaid 的行为往根节点写
 `background-color:white`，深色界面里那就是一块刺眼的白板（这个坑有单元测试钉住）。
 
+**公式走的是 `egui_commonmark` 唯一开放的那个钩子。** `render_math_fn` 会把每个
+`$...$` / `$$...$$` 的 TeX 源码递过来，`math.rs` 用 RaTeX（KaTeX 的 Rust 移植）解析 + 排版，
+导出成"字形已经压平成 path"的 SVG，再交给 `resvg` 光栅化（`resvg` 本来就随 `merman` 在依赖树里）。
+排版结果给的是以 em 为单位的高度和深度，所以行内公式能和周围文字落在同一条基线上；
+比一行还高的公式（行内分式、大定界符）把超出部分一半往上一半往下分摊，不会去压相邻的行。
+贴图按 (源码, 行内/块级, 颜色, 每 em 像素数) 缓存，文字颜色直接写进光栅而不是事后反色，
+主题和缩放都在一次渲染里搞定。单个公式 release 下一次不到 1ms，所以这里没有防抖，
+只有正在编辑的那一个公式会重画。
+
 ## 测试
 
 ```bash
@@ -191,6 +204,8 @@ cargo test
 - `ui/editor.rs`：在无头 `egui::Context` 里真的排一次版，验证软换行续行不编号、
   行号 y 偏移严格递增、末尾换行多出一行、中文按字符而非字节计算行列
 - `ui/find.rs`：匹配查找、大小写不敏感、循环跳转、空查询
+- `math.rs`：在无头 `egui::Context` 里真的渲染公式 —— 行内公式留在文字行内且顺序正确、
+  块级公式独占一行并居中、坏 LaTeX 退回源码、第二帧复用贴图、深色主题下字形是浅色的
 - `mermaid.rs`：围栏切段（别的围栏里的 `mermaid` 不算数、没闭合的围栏、CRLF、
   切完拼回去必须和原文逐字节一致）
 - `i18n.rs`：占位符替换、英文单复数选择，以及两种语言的文案表条目数必须一致
@@ -205,6 +220,8 @@ cargo test
 | `eframe` / `egui` | 原生窗口与即时模式 UI（wgpu/Metal 渲染） |
 | `egui_commonmark` + `pulldown-cmark` | Markdown / GFM 渲染 |
 | `merman` | Mermaid 渲染（纯 Rust：解析 + 布局 + SVG + 光栅化） |
+| `ratex-parser` / `ratex-layout` / `ratex-svg` | LaTeX 公式：解析、排版、SVG 导出（KaTeX 的 Rust 移植） |
+| `resvg` | 把公式 SVG 光栅化成贴图（`merman` 已经拉着同一个版本） |
 | `egui_extras` | syntect 语法高亮、图片加载 |
 | `rfd` | 系统原生文件对话框 |
 | `skrifa` | 校验系统字体是否可解析、读取字体度量（epaint 解析失败会直接 panic） |

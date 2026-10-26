@@ -36,6 +36,7 @@ mod document;
 mod fonts;
 mod i18n;
 mod markdown;
+mod math;
 mod mermaid;
 mod prefs;
 mod shortcuts;

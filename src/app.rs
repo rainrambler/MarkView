@@ -4,7 +4,9 @@
 //! 等所有面板画完之后再统一执行。好处是菜单项和快捷键可以共用同一套处理逻辑，
 //! 而且不会在画 UI 的时候和借用检查器打架。
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -16,6 +18,7 @@ use crate::document::{DocError, Document};
 use crate::fonts;
 use crate::i18n::{Language, fill};
 use crate::markdown::{self, Heading, Stats, byte_to_char};
+use crate::math;
 use crate::mermaid;
 use crate::prefs::{Preferences, ViewMode};
 use crate::shortcuts::keys;
@@ -99,6 +102,7 @@ pub enum Action {
     ToggleOutline,
     ToggleLineNumbers,
     ToggleWrap,
+    ToggleMath,
     CycleTheme,
     ZoomIn,
     ZoomOut,
@@ -190,6 +194,9 @@ pub struct App {
     pub cache: CommonMarkCache,
     /// Mermaid 位图缓存，见 [`crate::mermaid`]。
     pub mermaid: mermaid::MermaidCache,
+    /// 公式贴图缓存，见 [`crate::math`]。`Rc<RefCell<..>>` 是被
+    /// `egui_commonmark` 逼出来的：它的公式回调要求 `'static`，只能由闭包自己持有。
+    pub math: Rc<RefCell<math::MathCache>>,
     pub code_theme: CodeTheme,
     pub dialog: Dialog,
     pub find: FindState,
@@ -235,6 +242,7 @@ impl App {
             prefs,
             cache: CommonMarkCache::default(),
             mermaid: mermaid::MermaidCache::default(),
+            math: Rc::new(RefCell::new(math::MathCache::default())),
             code_theme: CodeTheme::from_style(&cc.egui_ctx.style_of(cc.egui_ctx.theme())),
             dialog: Dialog::None,
             find: FindState::default(),
@@ -322,6 +330,7 @@ impl App {
                 // 换了文档，预览缓存必须清掉，否则会显示上一个文件的渲染结果
                 self.cache = CommonMarkCache::default();
                 self.mermaid.clear();
+                self.math.borrow_mut().clear();
                 self.text_version = self.text_version.wrapping_add(1);
                 self.reveal = Some(Reveal {
                     char_start: 0,
@@ -346,6 +355,7 @@ impl App {
         self.doc = Document::untitled();
         self.cache = CommonMarkCache::default();
         self.mermaid.clear();
+        self.math.borrow_mut().clear();
         self.find.mark_dirty();
         self.text_version = self.text_version.wrapping_add(1);
         self.reveal = Some(Reveal {
@@ -515,6 +525,7 @@ impl App {
                     self.prefs.show_line_numbers = !self.prefs.show_line_numbers;
                 }
                 Action::ToggleWrap => self.prefs.editor_wrap = !self.prefs.editor_wrap,
+                Action::ToggleMath => self.prefs.render_math = !self.prefs.render_math,
                 Action::CycleTheme => self.prefs.theme = self.prefs.theme.next(),
                 Action::ZoomIn => crate::prefs::apply_zoom(ctx, 1.1),
                 Action::ZoomOut => crate::prefs::apply_zoom(ctx, 1.0 / 1.1),

@@ -42,6 +42,15 @@ image = { version = "0.25", default-features = false, features = [
 # 默认特性是空的，`raster`（PNG，隐含 `render`）必须显式打开。
 merman = { version = "0.7", default-features = false, features = ["raster"] }
 
+# 公式渲染（`$...$` / `$$...$$`）：RaTeX 是 KaTeX 的纯 Rust 移植，负责解析 + 排版，
+# 输出一条 DisplayList；光栅化交给它自带的 SVG 导出 + resvg（merman 已经在用同一个版本）。
+# `embed-fonts` 把 KaTeX 字体（约 270 KB）编进二进制，省得用户另外装字体。
+ratex-parser = "0.1"
+ratex-layout = "0.1"
+ratex-types = "0.1"
+ratex-svg = { version = "0.1", features = ["embed-fonts"] }
+resvg = "0.46"
+
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 rfd = "0.17"
 serde = { version = "1", features = ["derive"] }

@@ -29,6 +29,9 @@ cargo run -- notes.md            # open a file (or just drag one into the window
 - Syntax-highlighted code blocks (syntect); inline and local images both render.
 - **Mermaid diagrams are drawn for real** — parsed, laid out and rasterised in pure Rust, with no
   Node or browser involved. If the syntax is broken, the block falls back to showing its source.
+- **LaTeX math** (`$...$` inline, `$$...$$` on its own line) is typeset by RaTeX — KaTeX's Rust
+  port — with the KaTeX fonts compiled into the binary. Baselines line up with the surrounding
+  text and it follows the light/dark theme. Broken formulas fall back to showing their source.
 - **Task-list checkboxes in the preview are clickable**, and the change is written back to the
   source text.
 
@@ -36,7 +39,8 @@ cargo run -- notes.md            # open a file (or just drag one into the window
 - Native file dialogs (rfd).
 - CRLF / LF and the UTF-8 BOM are preserved exactly on save, so you never pollute a git diff.
 - Export to HTML: a self-contained file with its own stylesheet that follows the system
-  light/dark setting and prints cleanly.
+  light/dark setting and prints cleanly. Math stays as `$...$` in the exported file (drop in
+  KaTeX or MathJax on the receiving site if you need it typeset there too).
 - Recent-files list, drag and drop, and `markview notes.md` on the command line.
 - Unsaved changes are caught before the window closes or another file is opened.
 
@@ -138,6 +142,7 @@ src/
   i18n.rs          UI string table (English / Simplified Chinese)
   markdown.rs      Pure logic: outline extraction, word count, HTML export
   mermaid.rs       Pure logic: split on mermaid fences, render, bitmap cache
+  math.rs          Pure logic: LaTeX -> SVG (RaTeX) -> texture, formula cache
   fonts.rs         CJK font loading
   ui/
     mod.rs         Theme and style tweaks
@@ -183,6 +188,17 @@ page background and light/dark flag: the default pipeline copies Mermaid and wri
 `background-color:white` onto the root node, which is a glaring white slab on a dark UI (a unit
 test pins that down as well).
 
+**Math goes through the one hook `egui_commonmark` does offer.** `render_math_fn` hands over the
+TeX source of each `$...$` / `$$...$$` span; `math.rs` parses and typesets it with RaTeX (KaTeX's
+Rust port), exports the result as SVG with glyphs already flattened to paths, and lets `resvg`
+rasterise it — `resvg` is already in the dependency tree via `merman`. The layout box reports
+height and depth in em, so inline formulas sit on the same baseline as the text around them
+(formulas taller than a line share their overflow half above, half below instead of colliding with
+the neighbouring line). Textures are cached by (source, inline/display, colour, pixels-per-em) and
+the darkest/lightest colour is baked into the raster rather than inverted afterwards, so the theme
+and zoom factor both come out right in a single pass. A single formula costs well under a
+millisecond in a release build, so there is no debounce here — only the edited formula is redrawn.
+
 ## Testing
 
 ```bash
@@ -194,6 +210,9 @@ cargo test
   trailing newline yields an extra line, and that Chinese text is measured in characters rather
   than bytes.
 - `ui/find.rs` — matching, case insensitivity, wrap-around stepping, empty queries.
+- `math.rs` — renders formulas for real in a headless `egui::Context`: inline math stays on the
+  text line and in reading order, display math gets its own centred line, broken LaTeX falls back
+  to its source, textures are reused on the next frame, and a dark theme produces light glyphs.
 - `mermaid.rs` — fence splitting: a `mermaid` fence nested inside another fence does not count,
   unterminated fences, CRLF, and the invariant that re-joining every segment reproduces the
   source byte for byte.
@@ -211,6 +230,8 @@ agrees with what the document says.
 | `eframe` / `egui` | Native window and immediate-mode UI (wgpu / Metal) |
 | `egui_commonmark` + `pulldown-cmark` | Markdown / GFM rendering |
 | `merman` | Mermaid rendering (pure Rust: parse + layout + SVG + rasterise) |
+| `ratex-parser` / `ratex-layout` / `ratex-svg` | LaTeX math: parse, layout, SVG export (KaTeX's Rust port) |
+| `resvg` | Rasterising the math SVG (already pulled in by `merman`) |
 | `egui_extras` | syntect syntax highlighting, image loading |
 | `rfd` | Native file dialogs |
 | `skrifa` | Validating that system fonts parse and reading their metrics (epaint panics if they do not parse) |
