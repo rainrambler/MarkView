@@ -45,6 +45,7 @@ const MAX_PIXELS: u64 = 16 * 1024 * 1024;
 /// 行内公式靠 `depth` 才能和旁边的文字对齐。
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Metrics {
+    width: f32,
     height: f32,
     depth: f32,
 }
@@ -163,9 +164,9 @@ pub fn show(cache: &RefCell<MathCache>, ui: &mut Ui, tex: &str, display: bool) {
         let mut cache = cache.borrow_mut();
         cache
             .get_or_render(ui.ctx(), &key, ratex_color(color))
-            .map(|entry| (entry.texture.id(), entry.metrics, entry.texture.size_vec2()))
+            .map(|entry| (entry.texture.id(), entry.metrics))
     };
-    let (texture, metrics, texture_size) = match painted {
+    let (texture, metrics) = match painted {
         Ok(painted) => painted,
         // 语法还没写对（打字到一半就是这种状态）：把源码原样摆出来，别让这块地方凭空消失
         Err(_) => {
@@ -174,16 +175,16 @@ pub fn show(cache: &RefCell<MathCache>, ui: &mut Ui, tex: &str, display: bool) {
         }
     };
 
-    // 贴图是按 em_px 画的，这里是"每个贴图像素对应多少点"，交给 egui 缩放
-    let scale = em / em_px;
-    let size = texture_size * scale;
+    // 尺寸只听排版结果的：贴图是中间产物，像素边界还带着光栅化的取整误差（见 `render`）。
+    // 按贴图算尺寸会让公式整体偏大，行内公式的基线也跟着往下掉。
+    let natural = Vec2::new(metrics.width, metrics.height + metrics.depth) * em;
     let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     if display {
         // 占满一整行，于是后面的内容自然换到下一行；公式本身居中
         let available = ui.max_rect().width().max(ui.available_width());
-        let fit = (available / size.x).clamp(0.1, 1.0);
-        let scaled = size * fit;
+        let fit = (available / natural.x).clamp(0.1, 1.0);
+        let scaled = natural * fit;
         let (rect, response) = ui.allocate_exact_size(
             Vec2::new(available, scaled.y + DISPLAY_MARGIN * 2.0),
             Sense::hover(),
@@ -195,8 +196,8 @@ pub fn show(cache: &RefCell<MathCache>, ui: &mut Ui, tex: &str, display: bool) {
     }
 
     // 比预览区还宽的公式（一长串推导）缩一缩，硬塞会直接横向溢出
-    let fit = (ui.max_rect().width() / size.x).clamp(0.2, 1.0);
-    let size = size * fit;
+    let fit = (ui.max_rect().width() / natural.x).clamp(0.2, 1.0);
+    let size = natural * fit;
     let (height, top_offset) = inline_placement(metrics, em * fit, ascent, row_height);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(size.x, height), Sense::hover());
     let image_rect = Rect::from_min_size(egui::pos2(rect.left(), rect.top() + top_offset), size);
@@ -393,8 +394,17 @@ fn render(
             ..Default::default()
         },
     );
-    let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())
-        .map_err(|err| err.to_string())?;
+    // `ratex_svg` 把根节点的 `width`/`height` 写成了 pt；usvg 默认按 96 dpi 换算，
+    // 于是贴图会比 `font_size` 大 4/3。这里把 dpi 定成 72，让 1pt = 1px，
+    // 贴图才正好是 `em_px` 个像素一个字号。
+    let tree = resvg::usvg::Tree::from_str(
+        &svg,
+        &resvg::usvg::Options {
+            dpi: 72.0,
+            ..Default::default()
+        },
+    )
+    .map_err(|err| err.to_string())?;
 
     let size = tree.size();
     let width = (size.width().ceil() as u32).max(1);
@@ -414,6 +424,7 @@ fn render(
     let image =
         ColorImage::from_rgba_premultiplied([width as usize, height as usize], pixmap.data());
     let metrics = Metrics {
+        width: list.width as f32,
         height: list.height as f32,
         depth: list.depth as f32,
     };
@@ -425,9 +436,17 @@ mod tests {
     use super::*;
     use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
+    /// 一段文字图元：外框、文本、以及肉眼看到的基线（相对整个输出）。
+    #[derive(Debug)]
+    struct TextRun {
+        rect: egui::Rect,
+        text: String,
+        baseline: f32,
+    }
+
     /// 在无头 egui 里渲染三帧（前两帧让排版稳定、并把贴图建起来），
     /// 返回第三帧的（文字, 公式贴图）图元。
-    fn render(source: &str) -> (Vec<(egui::Rect, String)>, Vec<egui::Rect>) {
+    fn render(source: &str) -> (Vec<TextRun>, Vec<egui::Rect>) {
         let cache = std::rc::Rc::new(RefCell::new(MathCache::default()));
         let mut commonmark = CommonMarkCache::default();
         let mut text = source.to_owned();
@@ -458,12 +477,10 @@ mod tests {
         result
     }
 
-    fn collect(
-        shapes: &[egui::epaint::ClippedShape],
-    ) -> (Vec<(egui::Rect, String)>, Vec<egui::Rect>) {
+    fn collect(shapes: &[egui::epaint::ClippedShape]) -> (Vec<TextRun>, Vec<egui::Rect>) {
         fn walk(
             shape: &egui::epaint::Shape,
-            texts: &mut Vec<(egui::Rect, String)>,
+            texts: &mut Vec<TextRun>,
             images: &mut Vec<egui::Rect>,
         ) {
             match shape {
@@ -477,10 +494,17 @@ mod tests {
                         .first()
                         .map_or(0.0, |section| section.leading_space);
                     let min = egui::pos2(text.pos.x + leading, text.pos.y);
-                    texts.push((
-                        egui::Rect::from_min_size(min, text.galley.size()),
-                        text.galley.job.text.clone(),
-                    ));
+                    let ascent = text
+                        .galley
+                        .rows
+                        .first()
+                        .and_then(|row| row.row.glyphs.first())
+                        .map_or(0.0, |glyph| glyph.pos.y);
+                    texts.push(TextRun {
+                        rect: egui::Rect::from_min_size(min, text.galley.size()),
+                        text: text.galley.job.text.clone(),
+                        baseline: min.y + ascent,
+                    });
                 }
                 // 公式是用 painter.image 画的，落下来就是一张带贴图的 mesh
                 egui::epaint::Shape::Mesh(mesh)
@@ -505,16 +529,23 @@ mod tests {
         (texts, images)
     }
 
-    fn rect_of(texts: &[(egui::Rect, String)], needle: &str) -> egui::Rect {
+    fn text_run<'a>(texts: &'a [TextRun], needle: &str) -> &'a TextRun {
         texts
             .iter()
-            .find(|(_, text)| text.contains(needle))
+            .find(|run| run.text.contains(needle))
             .unwrap_or_else(|| panic!("没有找到 {needle:?} 的文字图元"))
-            .0
+    }
+
+    fn rect_of(texts: &[TextRun], needle: &str) -> egui::Rect {
+        text_run(texts, needle).rect
     }
 
     fn metrics(height: f32, depth: f32) -> Metrics {
-        Metrics { height, depth }
+        Metrics {
+            width: 1.0,
+            height,
+            depth,
+        }
     }
 
     #[test]
@@ -625,12 +656,57 @@ mod tests {
         );
     }
 
+    /// 公式贴图必须按排版尺寸画，而不是按光栅化出来的像素尺寸。
+    ///
+    /// `ratex-svg` 把根节点的 `width`/`height` 写成了 pt，usvg 默认按 96dpi 换算，
+    /// 贴图于是比排版结果大 4/3；照着贴图定尺寸，公式会整体变大，行内公式的基线
+    /// 还会往下掉一截。这里直接拿 `DisplayList` 算期望值。
+    #[test]
+    fn inline_math_is_drawn_at_its_layout_size() {
+        let (_, images) = render("before $x$ after");
+        assert_eq!(images.len(), 1, "行内公式应该画出一张贴图");
+        let formula = images[0];
+
+        let em = egui::TextStyle::Body.resolve(&egui::Style::default()).size;
+        let list = typeset("x", false, Color::BLACK).unwrap();
+        let expected = Vec2::new(list.width as f32, list.total_height() as f32) * em;
+
+        assert!(
+            (formula.width() - expected.x).abs() < 0.5,
+            "公式宽度应该是 {}，实际 {}",
+            expected.x,
+            formula.width()
+        );
+        assert!(
+            (formula.height() - expected.y).abs() < 0.5,
+            "公式高度应该是 {}，实际 {}",
+            expected.y,
+            formula.height()
+        );
+    }
+
+    #[test]
+    fn inline_math_baseline_matches_the_text() {
+        // `x` 没有下伸部分，贴图底边就是它的基线
+        let (texts, images) = render("before $x$ after");
+        assert_eq!(images.len(), 1);
+        let before = text_run(&texts, "before");
+        let formula = images[0];
+
+        assert!(
+            (formula.max.y - before.baseline).abs() < 1.0,
+            "公式底边 {} 没有落在文字基线 {} 上",
+            formula.max.y,
+            before.baseline
+        );
+    }
+
     #[test]
     fn broken_math_falls_back_to_the_source() {
         let (texts, images) = render("前 $\\frac{1}{$ 后");
         assert!(images.is_empty(), "坏公式不该画出贴图");
         assert!(
-            texts.iter().any(|(_, text)| text.contains("frac")),
+            texts.iter().any(|run| run.text.contains("frac")),
             "坏公式应该把源码留在原地"
         );
     }
