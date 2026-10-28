@@ -33,6 +33,30 @@ pub const APP_NAME: &str = "MarkView";
 /// 偏好设置在 eframe storage 里的键。
 const PREFS_KEY: &str = "markview.preferences.v1";
 
+/// 分栏时编辑区的最小宽度，按"分栏可用宽度"（扣掉大纲、状态栏之后）的比例算。
+/// 用比例而不是固定值，是为了窄窗口还能把编辑区拖窄，宽窗口又不会留一条挤到看不见的缝。
+const EDITOR_MIN_RATIO: f32 = 0.15;
+/// 比例的换算结果仍要夹在这个区间里：窗口最小内宽 760 时 15% 太小，超宽屏时又太大。
+const EDITOR_MIN_FLOOR: f32 = 160.0;
+const EDITOR_MIN_CEIL: f32 = 420.0;
+
+/// 分栏时编辑区的初始宽度占"分栏可用宽度"的比例。
+/// 0.6 正好对上默认 1280 窗口下的老布局（620 / 1050），换到别的窗口尺寸也保持同样的视觉比例。
+const EDITOR_DEFAULT_RATIO: f32 = 0.60;
+
+/// 编辑面板的宽度上限，同时也给初始宽度封顶。
+const EDITOR_MAX_SIZE: f32 = 1400.0;
+
+/// 分栏里编辑面板的最小宽度，`available` 是扣掉大纲/状态栏之后剩下的宽度。
+fn editor_min_size(available: f32) -> f32 {
+    (available * EDITOR_MIN_RATIO).clamp(EDITOR_MIN_FLOOR, EDITOR_MIN_CEIL)
+}
+
+/// 分栏里编辑面板的初始宽度。只有还没有记住的分栏宽度时才用得上（首次启动、清空设置）。
+fn editor_default_size(available: f32) -> f32 {
+    (available * EDITOR_DEFAULT_RATIO).clamp(editor_min_size(available), EDITOR_MAX_SIZE)
+}
+
 /// 编辑区 TextEdit 的稳定 Id。查找跳转、加粗等操作都要靠它读写光标状态。
 pub fn editor_id() -> egui::Id {
     egui::Id::unique("markview.editor.text")
@@ -790,11 +814,14 @@ impl eframe::App for App {
                     .show(ui, |ui| ui::preview::show(self, ui, &mut actions));
             }
             ViewMode::Split => {
+                // 每帧按当前分栏宽度重算：窗口缩放、大纲开关都会改变这两个值。
+                // 已记住的分栏宽度由 egui 的 PanelState 决定，这里的默认值只在没有记录时生效。
+                let available = ui.available_width();
                 egui::Panel::left("markview.editor.panel")
                     .resizable(true)
-                    .default_size(620.0)
-                    .min_size(260.0)
-                    .max_size(1400.0)
+                    .default_size(editor_default_size(available))
+                    .min_size(editor_min_size(available))
+                    .max_size(EDITOR_MAX_SIZE)
                     .show(ui, |ui| ui::editor::show(self, ui, &mut actions));
                 egui::CentralPanel::default_margins()
                     .show(ui, |ui| ui::preview::show(self, ui, &mut actions));
@@ -875,6 +902,33 @@ mod tests {
                     "{keys:?} 同时绑给了 {action:?} 和 {other_action:?}"
                 );
             }
+        }
+    }
+
+    /// 编辑区下限跟着分栏宽度走，但两头都要夹住。
+    #[test]
+    fn editor_min_size_scales_within_bounds() {
+        let close = |a: f32, b: f32| (a - b).abs() < 0.01;
+
+        assert!(close(editor_min_size(530.0), 160.0)); // 760 宽窗口：15% 太小 → 下限
+        assert!(close(editor_min_size(1280.0), 192.0)); // 按比例
+        assert!(close(editor_min_size(2560.0), 384.0));
+        assert!(close(editor_min_size(4000.0), 420.0)); // 超宽屏：封顶
+    }
+
+    /// 初始分栏同样按比例：默认 1280 窗口保持 620，窄窗口把省下的宽度让给预览，超宽屏封顶。
+    #[test]
+    fn editor_default_size_scales_within_bounds() {
+        let close = |a: f32, b: f32| (a - b).abs() < 0.01;
+
+        assert!(close(editor_default_size(530.0), 318.0)); // 760 宽窗口：预览还剩 212
+        assert!(close(editor_default_size(1050.0), 630.0)); // 默认 1280 窗口 ≈ 原来的 620
+        assert!(close(editor_default_size(2330.0), 1398.0));
+        assert!(close(editor_default_size(4000.0), EDITOR_MAX_SIZE)); // 超宽屏：封顶
+
+        // 任何宽度下初始值都不能低于下限，否则首帧就会被夹回下限
+        for available in [0.0, 100.0, 530.0, 1050.0, 4000.0] {
+            assert!(editor_default_size(available) >= editor_min_size(available));
         }
     }
 }
