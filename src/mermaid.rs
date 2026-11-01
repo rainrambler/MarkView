@@ -338,6 +338,10 @@ impl MermaidCache {
                 ctx.request_repaint_after(REDRAW_DELAY - idle);
                 previous
             }
+            // 当前源码的结论已经在缓存里了：直接用。
+            // 这里要是漏掉，就会变成每帧重画一遍（merman 的解析 + 布局 + 光栅化全跑），
+            // 滚动时一帧几十毫秒，一个核就没了。
+            None if self.entries.contains_key(&key) => key,
             None => {
                 let entry = match self.render(&ctx, key, source, dark, ppp, canvas) {
                     Ok(ready) => Entry::Ready(ready),
@@ -622,5 +626,49 @@ mod tests {
             let expected = image::Rgba([canvas.r(), canvas.g(), canvas.b(), 255]);
             assert_eq!(image.get_pixel(2, 2), &expected, "dark={dark} 的底色不对");
         }
+    }
+
+    /// 同一张图渲染过一次之后，后面每一帧都必须直接用缓存。
+    ///
+    /// 这是性能问题，不是正确性问题：漏掉缓存判断的话，每帧都会把 merman 的
+    /// 解析 + 布局 + 光栅化重跑一遍，滚动时一帧几十毫秒，一个 CPU 核心就没了。
+    #[test]
+    fn a_cached_diagram_is_not_redrawn() {
+        fn texture_of(cache: &MermaidCache) -> egui::TextureId {
+            cache
+                .entries
+                .values()
+                .find_map(|(entry, _)| match entry {
+                    Entry::Ready(ready) => Some(ready.texture.id()),
+                    Entry::Failed(_) => None,
+                })
+                .expect("应该已经画出来了")
+        }
+
+        let source = "flowchart LR\n    A[源文本] --> B[贴图]\n";
+        let mut cache = MermaidCache::default();
+        let ctx = egui::Context::default();
+
+        let mut ids = Vec::new();
+        for frame in 0..2 {
+            // 第二帧前先等过防抖窗口，否则走的是"先拿上一次的结果顶着"那条路
+            if frame > 0 {
+                std::thread::sleep(REDRAW_DELAY + std::time::Duration::from_millis(20));
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                cache.show(ui, 0, source, 300.0).expect("应该能画出来");
+            });
+            output.textures_delta.clear();
+            ids.push(texture_of(&cache));
+        }
+
+        assert_eq!(ids[0], ids[1], "第二帧又重画了一遍，缓存没起作用");
     }
 }

@@ -88,9 +88,6 @@ pub struct Preferences {
     pub recent: Vec<PathBuf>,
     /// 打开/保存对话框的起始目录。
     pub last_dir: Option<PathBuf>,
-    /// 预览里代码块使用的 syntect 主题名。
-    pub syntax_dark: String,
-    pub syntax_light: String,
 }
 
 impl Default for Preferences {
@@ -107,8 +104,6 @@ impl Default for Preferences {
             zoom: 1.0,
             recent: Vec::new(),
             last_dir: None,
-            syntax_dark: "base16-ocean.dark".to_owned(),
-            syntax_light: "base16-ocean.light".to_owned(),
         }
     }
 }
